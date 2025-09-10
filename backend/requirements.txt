@@ -1,10 +1,10 @@
 Flask==3.1.1
 flask_cors==5.0.1
 Flask_SocketIO==5.5.1
-jsonschema==3.2.0
-lxml==4.8.0
-matplotlib==3.10.5
-moose==0.9.8
-numpy==1.21.5
+jsonschema
+lxml
+matplotlib
+pymoose
+numpy
 Requests==2.32.4
 Werkzeug==3.1.3

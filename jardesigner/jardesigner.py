@@ -576,7 +576,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             ''' Make HH squid model sized compartment:
             len and dia 500 microns. CM = 0.01 F/m^2, RA =
             '''
-            self.elecid = makePassiveHHsoma( name = 'cell' )
+            self.elecid = jp.makePassiveHHsoma( name = 'cell' )
             assert( moose.exists( '/library/cell/soma' ) )
             self.soma = moose.element( '/library/cell/soma' )
             return
@@ -657,7 +657,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
     ################################################################
     def _buildElecSoma( self, dia, dx ):
         cell = moose.Neuron( '/library/cell' )
-        buildCompt( cell, 'soma', dia = dia, dx = dx )
+        jp.buildCompt( cell, 'soma', dia = dia, dx = dx )
         self.elecid = cell
         return cell
         
@@ -679,11 +679,11 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
     ################################################################
     def _buildElecBranchedCell( self, args ):
         cell = moose.Neuron( '/library/cell' )
-        prev = buildCompt( cell, 'soma', dia = args["somaDia"], dx = args["somaLen"] )
+        prev = jp.buildCompt( cell, 'soma', dia = args["somaDia"], dx = args["somaLen"] )
         dx = args["dendLen"]/args["dendNumSeg"]
         x = prev.x
         for i in range( args["dendNumSeg"] ):
-            compt = buildCompt( cell, 'dend' + str(i), x = x, dx = dx, dia = args["dendDia"] )
+            compt = jp.buildCompt( cell, 'dend' + str(i), x = x, dx = dx, dia = args["dendDia"] )
             moose.connect( prev, 'axial', compt, 'raxial' )
             prev = compt
             x += dx
@@ -692,7 +692,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         y = prev.y
         dxy = (args["branchLen"]/float(args["branchNumSeg"])) * np.sqrt( 1.0/2.0 )
         for i in range( args["branchNumSeg"] ):
-            compt = buildCompt( cell, 'branch1_' + str(i), 
+            compt = jp.buildCompt( cell, 'branch1_' + str(i), 
                     x = x, dx = dxy, y = y, dy = dxy, 
                     dia = args["branchDia"] )
             moose.connect( prev, 'axial', compt, 'raxial' )
@@ -704,7 +704,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         y = primaryBranchEnd.y
         prev = primaryBranchEnd
         for i in range( args["branchNumSeg"] ):
-            compt = buildCompt( cell, 'branch2_' + str(i), 
+            compt = jp.buildCompt( cell, 'branch2_' + str(i), 
                     x = x, dx = dxy, y = y, dy = -dxy, 
                     dia = args["branchDia"] )
             moose.connect( prev, 'axial', compt, 'raxial' )
@@ -719,7 +719,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
     def _buildVclampOnCompt( self, dendCompts, spineCompts ):
         stimObj = []
         for i in dendCompts + spineCompts:
-            vclamp = make_vclamp( name = 'vclamp', parent = i.path )
+            vclamp = jp.make_vclamp( name = 'vclamp', parent = i.path )
 
             # Assume SI units. Scale by Cm to get reasonable gain.
             vclamp.gain = i.Cm * 1e4 
@@ -735,7 +735,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         for i in dendCompts + spineCompts:
             path = i.path + '/' + stimInfo['relpath'] + '/sh/synapse[0]'
             if moose.exists( path ):
-                synInput = make_synInput( name='synInput', parent=path )
+                synInput = jp.make_synInput( name='synInput', parent=path )
                 synInput.doPeriodic = doPeriodic
                 moose.element(path).weight = synWeight
                 moose.connect( synInput, 'spikeOut', path, 'addSpike' )
@@ -759,7 +759,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             for key, val in i.items():
                 if key != "path":
                     temp.append( key )
-                    temp.append( str( value ) )
+                    temp.append( str( val ) )
             temp.append( "" )
         self.elecid.passiveDistribution = temp
 
@@ -1321,13 +1321,13 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
 
                     # Otherwise we use basepath as is.
                     basePath = modelPath + "/" + ff['path']
-                    pathStr = basePath + "." + fentry['field']
+                    pathStr = basePath + "." + ff['field']
                 if not nsdfPath in nsdfBlocks:
                     self.nsdfPathList.append( nsdfPath )
                     nsdfBlocks[nsdfPath] = [pathStr]
                     nsdf = moose.NSDFWriter2( nsdfPath )
                     nsdf.modelRoot = "" # Blank means don't save tree.
-                    nsdf.filename = fentry['file']
+                    nsdf.filename = ff['file']
                     # Insert the model setup files here.
                     nsdf.mode = 2
                     # Number of timesteps between flush
@@ -1854,7 +1854,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             self.elecid = kids[0]
             temp = moose.wildcardFind( self.elecid.path + '/#[ISA=CompartmentBase]' )
 
-        transformNMDAR( self.elecid.path )
+        jp.transformNMDAR( self.elecid.path )
         kids = moose.wildcardFind( '/library/##[0]' )
         for i in kids:
             i.tick = -1
@@ -1939,7 +1939,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             surroundMeshPath = comptDict[ em[1]]
             if self.verbose:
                 print( "surroundMESHPATH = ", surroundMeshPath )
-            surroundDsolve = moose.element( surroundMeshpath + "/dsolve" )
+            surroundDsolve = moose.element( surroundMeshPath + "/dsolve" )
             emdsolve.buildMeshJunctions( surroundDsolve )
 
     def _configureChemSolvers( self ):
