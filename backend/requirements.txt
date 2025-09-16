@@ -1,0 +1,10 @@
+Flask==3.1.1
+flask_cors==5.0.1
+Flask_SocketIO==5.5.1
+jsonschema
+lxml
+matplotlib
+pymoose
+numpy
+Requests==2.32.4
+Werkzeug==3.1.3

@@ -1,0 +1,42 @@
+# Byte-code files
+*.pyc
+__pycache__/
+
+# Virtual environments
+.venv/
+env/
+venv/
+.env/
+
+# Editor-specific files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# Database files (if using SQLite or similar local databases)
+*.sqlite3
+*.db
+*.db-journal
+
+# Logs
+*.log
+
+# Test reports
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Uploaded files or user-generated content (if applicable)
+/uploads/
+/local_storage
+/data
