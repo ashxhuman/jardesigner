@@ -45,7 +45,7 @@ const initialJsonData = {
 };
 
 const requiredKeys = ["filetype", "version"];
-const API_BASE_URL = `http://${window.location.hostname}:5000`;
+const API_BASE_URL = import.meta.env.DEV ? `http://${window.location.hostname}:5000` : "";
 const VIEW_IDS = { SETUP: 'setup', RUN: 'run' };
 
 const isSameSelection = (selA, selB) => {
