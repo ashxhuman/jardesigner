@@ -1,0 +1,18 @@
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    environment:
+      - TUNNEL_TOKEN=${TOKEN} # cloudflared tunnel token (.env file) at root dir 
+    command: tunnel --no-autoupdate run
+    depends_on:
+      - nginx
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+      
+

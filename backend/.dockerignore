@@ -1,0 +1,23 @@
+/.env.local
+.env
+.env*.local
+*.env.local
+
+# Other common excludes
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+node_modules
+.vscode
+.idea
+*.log
+.DS_Store
