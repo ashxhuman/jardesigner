@@ -5,6 +5,8 @@ services:
       dockerfile: backend/Dockerfile
     container_name: backend
     platform: linux/amd64
+    expose:
+      - 5000
     volumes:
       - ./logs:/app/logs 
     networks:
@@ -22,7 +24,7 @@ services:
     networks:
       - app-network
     restart: unless-stopped
-
+    
 networks:
   app-network:
     driver: bridge

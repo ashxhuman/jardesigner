@@ -25,6 +25,15 @@ app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+############### Monitoring #################
+from prometheus_flask_exporter import PrometheusMetrics
+metrics = PrometheusMetrics(app)
+
+# static information as metric
+metrics.info('app_info', 'Application info', version='1.0.3')
+
+#############################################
+
 # --- Store running process and session info ---
 running_processes = {}
 client_sim_map = {}
