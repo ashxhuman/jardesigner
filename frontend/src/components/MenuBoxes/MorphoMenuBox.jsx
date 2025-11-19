@@ -109,7 +109,9 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
 
         try {
             // 2. POST the file to the server's upload endpoint.
-			const uploadUrl = `http://${window.location.hostname}:5000/upload_file`;
+			const uploadUrl = import.meta.env.DEV 
+  ? `http://${window.location.hostname}:5000/upload_file` 
+  : `/upload_file`;
 
             const response = await fetch(uploadUrl, {
                 method: 'POST',

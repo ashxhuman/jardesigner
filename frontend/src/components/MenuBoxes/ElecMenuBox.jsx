@@ -171,7 +171,9 @@ const ElecMenuBox = ({ onConfigurationChange, currentConfig, clientId }) => {
         formData.append('clientId', clientId);
 
         try {
-            const uploadUrl = `http://${window.location.hostname}:5000/upload_file`;
+            const uploadUrl = import.meta.env.DEV 
+              ? `http://${window.location.hostname}:5000/upload_file` 
+              : `/upload_file`;
             const response = await fetch(uploadUrl, {
                 method: 'POST',
                 body: formData,
