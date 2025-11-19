@@ -1,317 +1,343 @@
 import os
 import json
-import subprocess
 import uuid
 import time
-import threading
 import shutil
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
-from flask_socketio import SocketIO, join_room
-from werkzeug.utils import secure_filename
+import subprocess
+import threading
 
-# --- Configuration ---
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+
+import socketio  # python-socketio ASGI server
+
+# ============================================================
+# Directory setup
+# ============================================================
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 TEMP_CONFIG_DIR = os.path.join(BASE_DIR, 'temp_configs')
 USER_UPLOADS_DIR = os.path.join(BASE_DIR, 'user_uploads')
-MOOSE_SCRIPT_NAME = "jardesigner.py"
-MOOSE_SCRIPT_PATH = os.path.join(BASE_DIR, MOOSE_SCRIPT_NAME)
 
 os.makedirs(TEMP_CONFIG_DIR, exist_ok=True)
 os.makedirs(USER_UPLOADS_DIR, exist_ok=True)
 
-# --- Flask App Initialization ---
-app = Flask(__name__)
-CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
+# ============================================================
+# FastAPI App + CORS
+# ============================================================
 
-############### Monitoring #################
-from prometheus_flask_exporter import PrometheusMetrics
-metrics = PrometheusMetrics(app)
+app = FastAPI()
 
-# static information as metric
-metrics.info('app_info', 'Application info', version='1.0.3')
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-#############################################
+# ============================================================
+# Socket.IO Server
+# ============================================================
 
-# --- Store running process and session info ---
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
+
+# ============================================================
+# Global runtime tracking
+# ============================================================
+
 running_processes = {}
 client_sim_map = {}
 sid_clientid_map = {}
 
+# ============================================================
+# Stream printer
+# ============================================================
 
 def stream_printer(stream, pid, stream_name):
-    """
-    Reads a stream line-by-line and prints it to the console in real-time.
-    """
     try:
         for line in iter(stream.readline, ''):
             if line:
                 print(f"[{pid}-{stream_name}] {line.strip()}")
-        # FIX: Corrected typo from .closee() to .close()
         stream.close()
-        print(f"Stream printer for PID {pid} ({stream_name}) has finished.")
+        print(f"Stream {stream_name} for PID {pid} finished.")
     except Exception as e:
-        print(f"Error in stream printer for PID {pid} ({stream_name}): {e}")
+        print(f"Stream error for PID {pid} -> {stream_name}: {e}")
 
+
+# ============================================================
+# Kill process
+# ============================================================
 
 def terminate_process(pid):
-    """Safely terminates a running process and cleans up its entry."""
-    if pid in running_processes:
-        try:
-            proc_info = running_processes[pid]
-            if proc_info["process"].poll() is None:
-                print(f"Terminating process {pid}...")
-                proc_info["process"].terminate()
-                proc_info["process"].wait(timeout=5)
-                print(f"Process {pid} terminated.")
-            del running_processes[pid]
-            return True
-        except Exception as e:
-            print(f"Error during termination of PID {pid}: {e}")
-            if pid in running_processes:
-                del running_processes[pid]
-    return False
-
-# --- API Endpoints ---
-@app.route('/')
-def index():
-    return jsonify({"message": "Flask backend is running!"})
-
-@app.route('/upload_file', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({"status": "error", "message": "No file part in the request"}), 400
-    
-    file = request.files['file']
-    client_id = request.form.get('clientId')
-
-    if not client_id:
-        return jsonify({"status": "error", "message": "No clientId provided"}), 400
-    if file.filename == '':
-        return jsonify({"status": "error", "message": "No selected file"}), 400
-
-    if file:
-        filename = secure_filename(file.filename)
-        session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
-        os.makedirs(session_dir, exist_ok=True)
-        
-        save_path = os.path.join(session_dir, filename)
-        file.save(save_path)
-        print(f"Saved file for client {client_id} to {save_path}")
-        
-        return jsonify({"status": "success", "message": "File uploaded successfully"}), 200
-
-    return jsonify({"status": "error", "message": "File upload failed for unknown reasons"}), 500
-
-@socketio.on('sim_command')
-def handle_sim_command(data):
-    pid_str = data.get('pid')
-    command = data.get('command')
-    if not pid_str or not command: return
+    if pid not in running_processes:
+        return False
     try:
-        pid = int(pid_str)
-    except (ValueError, TypeError): return
-    if pid in running_processes:
-        process = running_processes[pid]["process"]
-        if process.poll() is None:
-            try:
-                command_payload = {"command": command, "params": data.get("params", {})}
-                command_string = json.dumps(command_payload) + '\n'
-                process.stdin.write(command_string)
-                process.stdin.flush()
-            except Exception as e:
-                print(f"Error writing to PID {pid} stdin: {e}")
+        proc = running_processes[pid]["process"]
+        if proc.poll() is None:
+            print(f"Terminating {pid}")
+            proc.terminate()
+            proc.wait(timeout=5)
+        del running_processes[pid]
+        return True
+    except Exception as e:
+        print(f"Termination error for {pid}: {e}")
+        running_processes.pop(pid, None)
+        return False
 
-@app.route('/launch_simulation', methods=['POST'])
-def launch_simulation():
-    request_data = request.json
-    config_data = request_data.get('config_data')
-    client_id = request_data.get('client_id')
 
-    if not config_data or not isinstance(config_data, dict):
-        return jsonify({"status": "error", "message": "Invalid or missing JSON config data"}), 400
+# ============================================================
+# ROUTES
+# ============================================================
+
+@app.get("/")
+async def index():
+    return {"message": "FastAPI backend running!"}
+
+
+# -------------------------------
+# File Upload
+# -------------------------------
+@app.post("/upload_file")
+async def upload_file(
+    file: UploadFile = File(...),
+    clientId: str = Form(...)
+):
+    if not clientId:
+        raise HTTPException(400, "Missing clientId")
+
+    session_dir = os.path.join(USER_UPLOADS_DIR, clientId)
+    os.makedirs(session_dir, exist_ok=True)
+
+    save_path = os.path.join(session_dir, file.filename)
+
+    with open(save_path, "wb") as f:
+        f.write(await file.read())
+
+    print(f"Saved file for {clientId} -> {save_path}")
+    return {"status": "success", "message": "File uploaded successfully"}
+
+
+# -------------------------------
+# Launch simulation
+# -------------------------------
+@app.post("/launch_simulation")
+async def launch_sim(request: Request):
+    body = await request.json()
+    config_data = body.get("config_data")
+    client_id = body.get("client_id")
+
+    if not config_data:
+        raise HTTPException(400, "Missing config_data")
     if not client_id:
-        return jsonify({"status": "error", "message": "Request is missing client_id"}), 400
-    
+        raise HTTPException(400, "Missing client_id")
+
+    # kill older simulation
     if client_id in client_sim_map:
         old_pid = client_sim_map[client_id]
-        print(f"Client {client_id} has an existing simulation (PID: {old_pid}). Terminating it.")
         terminate_process(old_pid)
         client_sim_map.pop(client_id, None)
 
-    temp_file_path = None
-    try:
-        temp_file_name = f"config_{str(uuid.uuid4())}.json"
-        temp_file_path = os.path.join(TEMP_CONFIG_DIR, temp_file_name)
-        with open(temp_file_path, 'w', encoding='utf-8') as temp_file:
-            json.dump(config_data, temp_file, indent=2)
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"Could not save config file: {e}"}), 500
-    
-    '''
-    if not os.path.exists(MOOSE_SCRIPT_PATH):
-        return jsonify({"status": "error", "message": f"MOOSE script '{MOOSE_SCRIPT_NAME}' not found."}), 500
-    '''
+    # save temp config
+    temp_file_name = f"config_{uuid.uuid4()}.json"
+    temp_path = os.path.join(TEMP_CONFIG_DIR, temp_file_name)
+
+    with open(temp_path, "w") as f:
+        json.dump(config_data, f, indent=2)
 
     session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
     os.makedirs(session_dir, exist_ok=True)
+
     svg_filename = "plot.svg"
-    svg_filepath = os.path.abspath(os.path.join(session_dir, svg_filename))
+    svg_filepath = os.path.join(session_dir, svg_filename)
+
     data_channel_id = str(uuid.uuid4())
-    
+
     command = [
         "python", "-u", "-m",
         "jardesigner.jardesigner",
-        temp_file_path,
+        temp_path,
         "--plotFile", svg_filepath,
         "--data-channel-id", data_channel_id,
         "--session-path", session_dir
     ]
-    
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{BASE_DIR}:{env.get('PYTHONPATH', '')}"
+
     try:
-        env = os.environ.copy() # Copy local environment varialbs
-        if 'PYTHONPATH' in env:
-            env['PYTHONPATH'] = f"{BASE_DIR}:{env['PYTHONPATH']}"
-        else:
-            env['PYTHONPATH'] = BASE_DIR
         process = subprocess.Popen(
-            command, cwd=BASE_DIR, stdin=subprocess.PIPE, 
+            command,
+            cwd=BASE_DIR,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True, bufsize=1, env = env
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            env=env,
         )
-
-        running_processes[process.pid] = {
-            "process": process, "svg_filename": svg_filename,
-            "temp_config_file_path": temp_file_path, "start_time": time.time(),
-            "data_channel_id": data_channel_id, "client_id": client_id,
-        }
-        client_sim_map[client_id] = process.pid
-
-        threading.Thread(target=stream_printer, args=(process.stdout, process.pid, 'stdout'), daemon=True).start()
-        threading.Thread(target=stream_printer, args=(process.stderr, process.pid, 'stderr'), daemon=True).start()
-
     except Exception as e:
-        return jsonify({"status": "error", "message": f"Failed to launch MOOSE script: {e}"}), 500
+        raise HTTPException(500, f"Failed to launch: {e}")
 
-    return jsonify({
-        "status": "success", "pid": process.pid,
-        "svg_filename": svg_filename, "data_channel_id": data_channel_id
-    }), 200
+    running_processes[process.pid] = {
+        "process": process,
+        "svg_filename": svg_filename,
+        "temp_config_file_path": temp_path,
+        "start_time": time.time(),
+        "data_channel_id": data_channel_id,
+        "client_id": client_id,
+    }
+    client_sim_map[client_id] = process.pid
 
-@app.route('/internal/push_data', methods=['POST'])
-def push_data():
-    data = request.json
-    channel_id = data.get('data_channel_id')
-    payload = data.get('payload')
-    if not channel_id or payload is None:
-        return jsonify({"status": "error", "message": "Missing data_channel_id or payload"}), 400
-    socketio.emit('simulation_data', payload, room=channel_id)
-    return jsonify({"status": "success"}), 200
+    # stream threads
+    threading.Thread(target=stream_printer, args=(process.stdout, process.pid, "stdout"), daemon=True).start()
+    threading.Thread(target=stream_printer, args=(process.stderr, process.pid, "stderr"), daemon=True).start()
 
-# MODIFIED: Restored the detailed diagnostic logging on connect.
-@socketio.on('connect')
-def handle_connect():
-    #print("-------------------------------------------")
-    #print(f"SERVER LOG: Client attempting to connect with sid: {request.sid}")
-    headers = dict(request.headers)
-    upgrade = headers.get("Upgrade", "Not found").lower()
-    connection = headers.get("Connection", "Not found").lower()
-    #print(f"SERVER LOG: Request Headers => {headers}")
-    #print(f"SERVER LOG: 'Upgrade' header value => '{upgrade}'")
-    #print(f"SERVER LOG: 'Connection' header value => '{connection}'")
-    if "websocket" not in upgrade:
-        print("SERVER LOG: >>> FATAL: 'Upgrade: websocket' header is MISSING.")
-    else:
-        print("SERVER LOG: >>> SUCCESS: 'Upgrade: websocket' header found.")
-    #print("-------------------------------------------")
-    #print(f"Client connected: {request.sid}")
+    return {
+        "status": "success",
+        "pid": process.pid,
+        "svg_filename": svg_filename,
+        "data_channel_id": data_channel_id,
+    }
 
 
-@socketio.on('register_client')
-def handle_register_client(data):
-    client_id = data.get('clientId')
-    if client_id:
-        sid_clientid_map[request.sid] = client_id
-        print(f"Registered client {client_id} to SID {request.sid}")
+# -------------------------------
+# Internal push_data
+# -------------------------------
+@app.post("/internal/push_data")
+async def push_data(request: Request):
+    data = await request.json()
+    channel = data.get("data_channel_id")
+    payload = data.get("payload")
 
-@socketio.on('disconnect')
-def handle_disconnect():
-    print(f"Client disconnected: {request.sid}")
-    client_id = sid_clientid_map.get(request.sid)
-    if client_id:
-        print(f"Client {client_id} disconnected. Cleaning up session data.")
-        session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
-        if os.path.exists(session_dir):
-            try:
-                shutil.rmtree(session_dir)
-                print(f"Successfully deleted session directory: {session_dir}")
-            except Exception as e:
-                print(f"Error deleting session directory {session_dir}: {e}")
-        
-        sid_clientid_map.pop(request.sid, None)
-        pid = client_sim_map.pop(client_id, None)
-        if pid:
-            terminate_process(pid)
+    if not channel or payload is None:
+        raise HTTPException(400, "Missing data_channel_id or payload")
 
-@socketio.on('join_sim_channel')
-def handle_join_sim_channel(data):
-    channel_id = data.get('data_channel_id')
-    if not channel_id: return
-    join_room(channel_id)
-    #print(f"Client {request.sid} joined data channel (room): {channel_id}")
+    await sio.emit("simulation_data", payload, room=channel)
+    return {"status": "success"}
 
-@app.route('/simulation_status/<int:pid>', methods=['GET'])
-def simulation_status(pid):
+
+# -------------------------------
+# Simulation status
+# -------------------------------
+@app.get("/simulation_status/{pid}")
+async def simulation_status(pid: int):
     if pid not in running_processes:
-        return jsonify({"status": "error", "message": "Process ID not found."}), 404
-    
-    proc_info = running_processes[pid]
-    process = proc_info["process"]
-    svg_filename = proc_info["svg_filename"]
-    client_id = proc_info["client_id"]
+        raise HTTPException(404, "PID not found")
+
+    info = running_processes[pid]
+    process = info["process"]
+    client_id = info["client_id"]
+    svg_file = info["svg_filename"]
+
     session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
-    svg_filepath = os.path.abspath(os.path.join(session_dir, svg_filename))
+    svg_path = os.path.join(session_dir, svg_file)
 
-    poll_result = process.poll()
-    if poll_result is None:
-        return jsonify({"status": "running", "pid": pid, "message": "Simulation is still in progress."}), 200
-    else:
-        plot_exists = os.path.exists(svg_filepath)
-        if plot_exists:
-            return jsonify({"status": "completed", "pid": pid, "svg_filename": svg_filename, "plot_ready": True}), 200
-        else:
-            return jsonify({"status": "completed_error", "pid": pid, "message": "Plot not found."}), 200
+    if process.poll() is None:
+        return {"status": "running", "pid": pid}
 
-@app.route('/session_file/<client_id>/<filename>')
-def get_session_file(client_id, filename):
-    if '..' in client_id or '/' in client_id or '..' in filename or filename.startswith('/'):
-        return jsonify({"status": "error", "message": "Invalid path."}), 400
+    if os.path.exists(svg_path):
+        return {"status": "completed", "pid": pid, "plot_ready": True}
+
+    return {"status": "completed_error", "pid": pid, "plot_ready": False}
+
+
+# -------------------------------
+# Fetch session file
+# -------------------------------
+@app.get("/session_file/{client_id}/{filename}")
+async def fetch_file(client_id: str, filename: str):
+    path = os.path.join(USER_UPLOADS_DIR, client_id, filename)
+    if not os.path.exists(path):
+        raise HTTPException(404, "File not found")
+
+    return FileResponse(path)
+
+
+# -------------------------------
+# Reset simulation
+# -------------------------------
+@app.post("/reset_simulation")
+async def reset_sim(request: Request):
+    body = await request.json()
+    pid_str = body.get("pid")
+    client_id = body.get("client_id")
+
+    if not pid_str:
+        raise HTTPException(400, "PID missing")
+
+    pid = int(pid_str)
+
+    if terminate_process(pid):
+        client_sim_map.pop(client_id, None)
+        return {"status": "success", "message": f"PID {pid} reset"}
+
+    raise HTTPException(404, "PID not found")
+
+
+# ============================================================
+# Socket.IO EVENT HANDLERS
+# ============================================================
+
+@sio.event
+async def connect(sid, environ):
+    print("Client connected:", sid)
+
+
+@sio.event
+async def disconnect(sid):
+    print("Disconnect:", sid)
+
+    client_id = sid_clientid_map.get(sid)
+    if not client_id:
+        return
+
     session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
-    return send_from_directory(session_dir, filename)
+    if os.path.exists(session_dir):
+        shutil.rmtree(session_dir)
 
-@app.route('/reset_simulation', methods=['POST'])
-def reset_simulation():
-    request_data = request.json
-    pid_to_reset_str = request_data.get('pid')
-    client_id = request_data.get('client_id')
-    if not pid_to_reset_str:
-        return jsonify({"status": "error", "message": "PID not provided for reset."}), 400
-    try:
-        pid_to_reset = int(pid_to_reset_str)
-    except (ValueError, TypeError):
-        return jsonify({"status": "error", "message": f"Invalid PID format: {pid_to_reset_str}"}), 400
+    sid_clientid_map.pop(sid, None)
 
-    if terminate_process(pid_to_reset):
-        if client_id and client_id in client_sim_map:
-            client_sim_map.pop(client_id, None)
-        return jsonify({"status": "success", "message": f"Simulation PID {pid_to_reset} reset."}), 200
-    else:
-        return jsonify({"status": "error", "message": "Process ID not found for reset."}), 404
+    pid = client_sim_map.pop(client_id, None)
+    if pid:
+        terminate_process(pid)
 
-if __name__ == '__main__':
-    print(f"MOOSE Script Path: {MOOSE_SCRIPT_PATH}")
-    print(f"User Uploads Directory (absolute): {os.path.abspath(USER_UPLOADS_DIR)}")
-    print(f"Temporary Config Directory (absolute): {os.path.abspath(TEMP_CONFIG_DIR)}")
-    print("Starting Flask-SocketIO server...")
-    socketio.run(app, host='0.0.0.0', debug=False, port=5000)
+
+@sio.event
+async def register_client(sid, data):
+    cid = data.get("clientId")
+    sid_clientid_map[sid] = cid
+    print("Registered client", cid, "SID:", sid)
+
+
+@sio.event
+async def join_sim_channel(sid, data):
+    channel = data.get("data_channel_id")
+    await sio.enter_room(sid, channel)
+    print("SID", sid, "joined", channel)
+
+
+@sio.event
+async def sim_command(sid, data):
+    pid = int(data.get("pid"))
+    cmd = data.get("command")
+    params = data.get("params", {})
+
+    if pid not in running_processes:
+        return
+
+    proc = running_processes[pid]["process"]
+    if proc.poll() is None:
+        payload = json.dumps({"command": cmd, "params": params}) + "\n"
+        proc.stdin.write(payload)
+        proc.stdin.flush()
+
+
+# ============================================================
+# RUN APP
+# ============================================================
+
+# Run using: uvicorn main:socket_app --host 0.0.0.0 --port 5000

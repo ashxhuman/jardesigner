@@ -8,9 +8,13 @@ services:
     expose:
       - 5000
     volumes:
-      - ./logs:/app/logs 
+      - ./logs:/app/logs
+      - ./backend/temp_configs:/app/backend/temp_configs
+      - ./backend/user_uploads:/app/backend/user_uploads
     networks:
       - app-network
+    ulimits:
+      nofile: 65536
 
   nginx:
     build:
@@ -24,6 +28,8 @@ services:
     networks:
       - app-network
     restart: unless-stopped
+    ulimits:
+      nofile: 65536
     
 networks:
   app-network:

@@ -51,9 +51,19 @@ COPY backend /app/backend
 # log file
 RUN mkdir -p /app/logs
 RUN chmod -R 755 /app/logs
+
+# Create directories for volumes
+RUN mkdir -p /app/backend/temp_configs
+RUN mkdir -p /app/backend/user_uploads
+RUN chmod -R 755 /app/backend/temp_configs
+RUN chmod -R 755 /app/backend/user_uploads
+
 # Set PYTHONPATH
 ENV PYTHONPATH=/app
 
+# Define volumes for persistent data
+VOLUME ["/app/backend/temp_configs", "/app/backend/user_uploads"]
+
 EXPOSE 5000
 
-CMD ["gunicorn", "backend.server:app", "-c", "backend/gunicorn.py"]
+CMD ["uvicorn", "backend.server:socket_app", "--host", "0.0.0.0", "--port", "5000"]
