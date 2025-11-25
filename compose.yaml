@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: backend
+    platform: linux/amd64
+    expose:
+      - 5000
+    volumes:
+      - ./logs:/app/logs
+      - ./backend/temp_configs:/app/backend/temp_configs
+      - ./backend/user_uploads:/app/backend/user_uploads
+    networks:
+      - app-network
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    container_name: nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    restart: unless-stopped
+    
+networks:
+  app-network:
+    driver: bridge
+
