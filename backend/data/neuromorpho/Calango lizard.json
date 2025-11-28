@@ -1,0 +1,20 @@
+{
+  "species": [
+    "Calango lizard"
+  ],
+  "brain_region": [
+    "pallium",
+    "dorsomedial",
+    "cortex",
+    "medial"
+  ],
+  "cell_type": [
+    "Nitrergic",
+    "bipolar",
+    "NADPH diaphorase-expressing",
+    "interneuron"
+  ],
+  "archive": [
+    "Macedo-Lima"
+  ]
+}

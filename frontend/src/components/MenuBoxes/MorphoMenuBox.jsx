@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Tabs, Tab, Typography, TextField, Grid, Tooltip, IconButton, Button } from '@mui/material';
+import {Box, Tabs, Tab, Typography, TextField, Grid, Tooltip, IconButton, Button, Dialog, Container} from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import helpText from './MorphoMenuBox.Help.json';
@@ -8,6 +8,8 @@ import somaIcon from '../../assets/soma.png';
 import ballAndStickIcon from '../../assets/ballAndStick.png';
 import yBranchIcon from '../../assets/ybranch.png';
 import { formatFloat } from '../../utils/formatters.js';
+import NeuroMorphoApp from '../../../../backend/clients/frontend/src/app/Neuromorpho';
+import { StoredDataCard } from  '../../../../backend/clients/frontend/src/app/Neuromorpho';
 
 // --- Unit Conversion Helpers ---
 const toMeters = (microns) => {
@@ -125,7 +127,7 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
 
             // 3. On success, update the main app state with the original filename for portability.
             onFileChange({ filename: file.name });
-            
+
         } catch (error) {
             console.error("Error uploading file:", error);
             alert(`Failed to upload the selected file: ${error.message}`);
@@ -183,6 +185,9 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
             }
         };
     }, []);
+    const [open, setOpen] = React.useState(false);
+    const handleOpen = () => setOpen(true);
+    const handleClose = () => setOpen(false);
 
     return (
         <Box sx={{ p: 2, background: '#f5f5f5', borderRadius: 2 }}>
@@ -206,6 +211,32 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
                                 Active File: {currentConfig.source}
                             </Typography>
                         )}
+                        <Box>
+                            <Button variant="outlined" onClick={handleOpen}>
+                                {" "}
+                                MOOSE Client{" "}
+                            </Button>
+
+                            <Dialog open={open} onClose={handleClose} scroll="paper">
+                                <Container sx={{ mt: 2 }}>
+                                    <Button
+                                        size="small"
+                                        color="primary"
+                                        variant="contained"
+                                        onClick={handleClose}
+                                    >
+                                        Close
+                                    </Button>
+                                    <Typography align="center" variant="h5">
+                                        MOOSE Client
+                                    </Typography>
+                                    <NeuroMorphoApp />
+                                </Container>
+                            </Dialog>
+                        </Box>
+                        <container>
+                            <StoredDataCard autoRefresh={true} />
+                        </container>
                     </Box>
                 )}
                 {tabIndex === 1 && (

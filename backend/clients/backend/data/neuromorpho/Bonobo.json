@@ -1,0 +1,22 @@
+{
+  "species": [
+    "Bonobo"
+  ],
+  "brain_region": [
+    "neocortex",
+    "peripheral nervous system",
+    "frontal"
+  ],
+  "cell_type": [
+    "astrocyte",
+    "Glia",
+    "interlaminar",
+    "principal cell",
+    "induced pluripotent stem cell-(iPSC)-derived",
+    "GFAP-positive"
+  ],
+  "archive": [
+    "Falcone",
+    "Schornig_Taverna"
+  ]
+}

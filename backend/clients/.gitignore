@@ -1,0 +1,47 @@
+#####################################
+# 🔁 General & OS-specific ignores
+#####################################
+# OS
+.DS_Store
+Thumbs.db
+
+# Swap / temp files
+*.swp
+*.swo
+
+# Logs
+*.log
+
+#####################################
+# Environment / Secrets
+#####################################
+.env
+.env.*
+
+#####################################
+# Package managers & config
+#####################################
+*.lock
+.pypirc
+
+#####################################
+# Docker & Misc
+#####################################
+*.pid
+*.tar
+*.bak
+*.backup
+
+# Build / documentation
+site/
+docs/_build/
+dist/
+build/
+
+#####################################
+# IDE / Editor
+#####################################
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project

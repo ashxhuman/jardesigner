@@ -1,0 +1,11 @@
+[
+  {
+    "neuron_id": 10000,
+    "neuron_name": "AS2",
+    "archive": "openworm",
+    "file_path": "/Users/ash/Documents/jardesigner-neuromorpho-fix/jardesigner/backend/user_uploads/2a1db7b7-e7b7-44c5-9aef-5e18affe5f3d/swc/neuromorpho/AS2.swc",
+    "png_url": "http://neuromorpho.org/images/imageFiles/OpenWorm/AS2.png",
+    "uploaded_at": "2025-11-28 13:51:37.506627",
+    "data_file": "/Users/ash/Documents/jardesigner-neuromorpho-fix/jardesigner/backend/user_uploads/2a1db7b7-e7b7-44c5-9aef-5e18affe5f3d/client_data/neuromorpho_10000.json"
+  }
+]

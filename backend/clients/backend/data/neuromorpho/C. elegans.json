@@ -1,0 +1,32 @@
+{
+  "species": [
+    "C. elegans"
+  ],
+  "brain_region": [
+    "ventral ganglion",
+    "somatic nervous system",
+    "ventral nerve cord",
+    "lateral ganglion",
+    "dorsal ganglion",
+    "dorsorectal ganglion"
+  ],
+  "cell_type": [
+    "Integrative ring",
+    "Multisensory",
+    "DVB",
+    "Amphid",
+    "GABAergic",
+    "Motoneuron",
+    "interneuron",
+    "putative sensory",
+    "principal cell",
+    "somatic",
+    "Mechanosensory",
+    "Chemosensory",
+    "Ring"
+  ],
+  "archive": [
+    "Hart",
+    "OpenWorm"
+  ]
+}

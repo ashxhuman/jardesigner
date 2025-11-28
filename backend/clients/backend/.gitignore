@@ -1,0 +1,47 @@
+# Byte-code files
+*.pyc
+__pycache__/
+
+# Virtual environment
+.venv/
+venv/
+env/
+.env/
+
+# Editor/IDE specific files
+.vscode/
+.idea/
+*.swp
+*~
+
+# Test files
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Database files
+*.sqlite3
+*.db
+
+# Log files
+*.log
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Uploaded files or media
+media/
+uploads/
+
+# Configuration files (if sensitive or environment-specific)
+config.ini
+.env
+
+# Jupyter notebooks (if applicable)
+.ipynb_checkpoints/
+
+
+# local files
+/local_storage
