@@ -6,9 +6,8 @@ import shutil
 import subprocess
 import threading
 
-from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException, APIRouter
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import UploadFile, File, Form, Request, HTTPException, APIRouter
+from fastapi.responses import FileResponse
 import socketio
 
 # ============================================================
@@ -23,16 +22,11 @@ os.makedirs(TEMP_CONFIG_DIR, exist_ok=True)
 os.makedirs(USER_UPLOADS_DIR, exist_ok=True)
 
 # ============================================================
-# FastAPI App + CORS
-# ============================================================
-
-app = APIRouter(tags=["Jardesigner"])
-
-# ============================================================
 # Socket.IO Server
 # ============================================================
 
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+
 # ============================================================
 # Global runtime tracking
 # ============================================================
@@ -40,6 +34,8 @@ sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 running_processes = {}
 client_sim_map = {}
 sid_clientid_map = {}
+
+app = APIRouter(tags=["Jardesigner"])
 
 # ============================================================
 # Stream printer
@@ -83,7 +79,7 @@ def terminate_process(pid):
 
 @app.get("/")
 async def index():
-    return {"message": "FastAPI backend running!", "data": sid_clientid_map}
+    return {"message": "FastAPI backend running!", "clientName": sid_clientid_map, "client_sim_map": client_sim_map }
 
 
 # -------------------------------
@@ -96,9 +92,6 @@ async def upload_file(
 ):
     if not clientId:
         raise HTTPException(400, "Missing clientId")
-
-    if not file.filename:
-        raise HTTPException(400, "Missing file")
 
     session_dir = os.path.join(USER_UPLOADS_DIR, clientId)
     os.makedirs(session_dir, exist_ok=True)
@@ -244,9 +237,7 @@ async def fetch_file(client_id: str, filename: str):
     path = os.path.join(USER_UPLOADS_DIR, client_id, filename)
     if not os.path.exists(path):
         raise HTTPException(404, "File not found")
-
     return FileResponse(path)
-
 
 # -------------------------------
 # Reset simulation
@@ -326,10 +317,4 @@ async def sim_command(sid, data):
         proc.stdin.write(payload)
         proc.stdin.flush()
 
-# app.include_router(MOOSEDataClients)
-
-# ============================================================
-# RUN APP
-# ============================================================
-
-# Run using: uvicorn main:socket_app --host 0.0.0.0 --port 5000
+#  uvicorn main:socket_app --host 0.0.0.0 --port 5000

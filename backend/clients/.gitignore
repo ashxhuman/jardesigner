@@ -1,6 +1,10 @@
 #####################################
 # 🔁 General & OS-specific ignores
 #####################################
+# Byte-code files
+*.pyc
+__pycache__/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -45,3 +49,4 @@ build/
 .idea/
 *.sublime-workspace
 *.sublime-project
+__pychache__/

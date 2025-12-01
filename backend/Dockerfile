@@ -49,14 +49,14 @@ COPY run_jardesigner.py /app/
 COPY backend /app/backend
 
 # log file
-RUN mkdir -p /app/logs
-RUN chmod -R 755 /app/logs
+RUN mkdir -p /clientapp/logs
+RUN chmod -R 755 /clientapp/logs
 
 # Create directories for volumes
-RUN mkdir -p /app/backend/temp_configs
-RUN mkdir -p /app/backend/user_uploads
-RUN chmod -R 755 /app/backend/temp_configs
-RUN chmod -R 755 /app/backend/user_uploads
+RUN mkdir -p /clientapp/backend/temp_configs
+RUN mkdir -p /clientapp/backend/user_uploads
+RUN chmod -R 755 /clientapp/backend/temp_configs
+RUN chmod -R 755 /clientapp/backend/user_uploads
 
 # Set PYTHONPATH
 ENV PYTHONPATH=/app
@@ -66,4 +66,4 @@ VOLUME ["/app/backend/temp_configs", "/app/backend/user_uploads"]
 
 EXPOSE 5000
 
-CMD ["python", "backend/server.py"]
+CMD  ["uvicorn" , "backend.main:socket_app", "--host" , "0.0.0.0", "--port", "5000"]

@@ -51,13 +51,13 @@ Start the FastAPI server using [uvicorn](https://www.uvicorn.org/):
 **Standard method (works on all platforms including Windows):**
 
 ```bash
-uvicorn main:app --reload
+uvicorn main:clientapp --reload
 ```
 
 **Alternative method for Windows if uvicorn command is not found:**
 
 ```bash
-python -m uvicorn main:app --reload
+python -m uvicorn main:clientapp --reload
 ```
 
 - The API will be available at: http://127.0.0.1:8000/

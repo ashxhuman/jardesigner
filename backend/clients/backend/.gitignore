@@ -45,3 +45,4 @@ config.ini
 
 # local files
 /local_storage
+/data

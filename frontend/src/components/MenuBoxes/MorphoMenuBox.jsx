@@ -8,8 +8,8 @@ import somaIcon from '../../assets/soma.png';
 import ballAndStickIcon from '../../assets/ballAndStick.png';
 import yBranchIcon from '../../assets/ybranch.png';
 import { formatFloat } from '../../utils/formatters.js';
-import NeuroMorphoApp from '../../../../backend/clients/frontend/src/app/Neuromorpho';
-import { StoredDataCard } from  '../../../../backend/clients/frontend/src/app/Neuromorpho';
+import NeuroMorphoApp from '../../clientapp/consumerComponent';
+import { StoredDataCard } from '../../clientapp/storageComponent';
 
 // --- Unit Conversion Helpers ---
 const toMeters = (microns) => {
@@ -125,7 +125,7 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
                 throw new Error(errorText || 'File upload failed');
             }
 
-            // 3. On success, update the main app state with the original filename for portability.
+            // 3. On success, update the main clientapp state with the original filename for portability.
             onFileChange({ filename: file.name });
 
         } catch (error) {
@@ -230,13 +230,11 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
                                     <Typography align="center" variant="h5">
                                         MOOSE Client
                                     </Typography>
-                                    <NeuroMorphoApp />
+                                    <NeuroMorphoApp clientId={clientId}/>
                                 </Container>
                             </Dialog>
                         </Box>
-                        <container>
-                            <StoredDataCard autoRefresh={true} />
-                        </container>
+                        <StoredDataCard clientId={clientId} onFileSelect={onFileChange} />
                     </Box>
                 )}
                 {tabIndex === 1 && (

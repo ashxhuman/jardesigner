@@ -11,3 +11,4 @@ Werkzeug==3.1.3
 pymoose==4.1.3
 prometheus-fastapi-instrumentator
 aiofiles==24.1.0
+httpx

@@ -11,5 +11,5 @@ if (rootElement) {
     // </React.StrictMode>
   );
 } else {
-  console.error("[main.jsx] Fatal: Could not find the root element to mount the app.");
+  console.error("[main.jsx] Fatal: Could not find the root element to mount the clientapp.");
 }

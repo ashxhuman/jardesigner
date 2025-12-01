@@ -26,5 +26,6 @@ yarn-error.log*
 **/OLD/
 /CELL_MODELS
 /temp_configs
+/user_uploads
 /TestModels
 /__pycache__

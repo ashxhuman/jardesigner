@@ -8,9 +8,9 @@ services:
     expose:
       - 5000
     volumes:
-      - ./logs:/app/logs
-      - ./backend/temp_configs:/app/backend/temp_configs
-      - ./backend/user_uploads:/app/backend/user_uploads
+      - ./logs:/clientapp/logs
+      - ./backend/temp_configs:/clientapp/backend/temp_configs
+      - ./backend/user_uploads:/clientapp/backend/user_uploads
     networks:
       - app-network
 

@@ -1,5 +1,4 @@
-import asyncio
-import json
+import json, os
 from pathlib import Path
 from datetime import datetime
 from typing import Union
@@ -12,22 +11,16 @@ from .neuromorpho_api.neuromorphoClient import NeuroMorphoAPI
 # Initialize router
 app = APIRouter(tags=["Neuromorpho"])
 
+# --- DEFINE Relative root dir --
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+USER_UPLOADS_DIR = os.path.join(BASE_DIR, 'user_uploads')
 
-# --- DEV MODE CONSTANT ---
-TEST_HARDCODED_PATH = Path("./_dev_session_storage_")
-
-
-def get_storage_manager(request: Request, dev_mode_path: Union[Path, str, None] = None) -> LocalStorageManager:
+def get_storage_manager(request: Request) -> LocalStorageManager:
     """
     Retrieves the session path from request state and instantiates LocalStorageManager.
-    Allows for path override via `dev_mode_path` for testing.
-    Raises HTTPException if the path is missing and not in dev mode.
+    Raises HTTPException if the path is missing.
     """
-    if dev_mode_path:
-        session_dir = dev_mode_path
-    else:
-        session_dir = getattr(request.state, "session_dir", None)
-
+    session_dir = getattr(request.state, "session_dir", None)
     if not session_dir:
         raise HTTPException(
             status_code=400,
@@ -66,7 +59,7 @@ async def neuromorpho_metadata(species: str):
     else:
         result = await NeuroMorphoAPI.fetch_all_metadata_for_species(species)
         print(f"Metadata result: {result}")
-        if metadata_file.exists():
+        if not metadata_file.exists():
             LocalStorageManager.save_json_file(metadata_file, result)
             return result
         return None
@@ -94,7 +87,6 @@ def submit_form(data: FormData):
         "hasPreviousPage": neuronpage.get("number", 0) > 0,
     }
 
-
 @app.post("/save_cart/")
 async def save_cart(
         data: CartData,
@@ -102,9 +94,6 @@ async def save_cart(
 ):
     """Save neuron cart data to local storage for the current session"""
     storage_manager = get_storage_manager(request)
-    # FOR TESTING: Use the line below instead of the one above to hardcode the path:
-    # storage_manager = get_storage_manager(request, dev_mode_path=TEST_HARDCODED_PATH)
-
     total_requested = len(data.neuron_ids)
 
     try:
@@ -154,7 +143,7 @@ async def save_cart(
             {
                 "success": processed_count > 0,
                 "message": message,
-                "file_path": str(storage_manager.SWC_DIR),
+                "file_path": str(storage_manager.session_path),
                 "client_name": neuron_request.client_name,
                 "total_requested": total_requested,
                 "total_successful": processed_count,
@@ -192,9 +181,6 @@ async def list_neuron_data(request: Request):
     """List all neuron SWC files with clients from local storage (for the session)"""
     try:
         storage_manager = get_storage_manager(request)
-        # FOR TESTING: Use the line below instead of the one above to hardcode the path:
-        # storage_manager = get_storage_manager(request, dev_mode_path=TEST_HARDCODED_PATH)
-
         all_data = []
         client_name = "neuromorpho"
 
@@ -228,9 +214,6 @@ async def delete_neuron_data(client_name: str, neuron_id: int, request: Request)
     """Delete neuron data (SWC file, metadata, and client JSON) for a given client and neuron ID."""
     try:
         storage_manager = get_storage_manager(request)
-        # FOR TESTING: Use the line below instead of the one above to hardcode the path:
-        # storage_manager = get_storage_manager(request, dev_mode_path=TEST_HARDCODED_PATH)
-
         success = storage_manager.delete_client_metadata(client_name, neuron_id)
 
         if not success:
@@ -258,9 +241,6 @@ async def get_client_neuron_data(client_name: str, request: Request):
     """Get neuron data for a specific client from local storage"""
     try:
         storage_manager = get_storage_manager(request)
-        # FOR TESTING: Use the line below instead of the one above to hardcode the path:
-        # storage_manager = get_storage_manager(request, dev_mode_path=TEST_HARDCODED_PATH)
-
         metadata = storage_manager.get_client_metadata(client_name)
         if not metadata:
             raise HTTPException(
@@ -283,9 +263,6 @@ async def get_storage_info(request: Request):
     """Get information about local storage usage for the current session"""
     try:
         storage_manager = get_storage_manager(request)
-        # FOR TESTING: Use the line below instead of the one above to hardcode the path:
-        # storage_manager = get_storage_manager(request, dev_mode_path=TEST_HARDCODED_PATH)
-
         swc_dir = storage_manager.SWC_DIR
         client_data_dir = storage_manager.CLIENT_DATA_DIR
         metadata_dir = storage_manager.METADATA_DIR
