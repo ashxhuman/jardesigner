@@ -256,6 +256,18 @@ class JarDesigner:
         self.comptDict = {}     # dict of chem compartments
         self.meshDict = {}      # dict of neuroMesh,spineMesh,psdMesh etc
         self.meshMols = {}      # dict of meshName:[molPathTail] in each mesh
+        
+        # ================================================================
+        # BUG FIX #2: Initialize ALL attributes with defaults FIRST
+        # These attributes are now initialized BEFORE JSON loading
+        # ================================================================
+        self.passiveDistrib = []
+        self.plotNames = []
+        self.wavePlotNames = []
+        self._endos = []
+        self._finishedSaving = False
+        self._modelFileNameList = []    # Used to build NSDF files
+        
         # Construct the absolute path to the schema file
         script_dir = os.path.dirname(os.path.abspath(__file__))
         schemaFile_path = os.path.join(script_dir, schemaFile)
@@ -296,19 +308,16 @@ class JarDesigner:
             quit()
 
         #### Now we load in all the fields of the jardesigner class
+        #### If JSON contains values for passiveDistrib, plotNames, etc.,
+        #### they will naturally overwrite the defaults set above
         for key, value in data.items():
             setattr(self, key, value)
         #### Check for command line overrides of content in json file.
         if verbose:
             self.verbose = True
-        #### Some internal fields
-        self._endos = []
-        self._finishedSaving = False
-        self._modelFileNameList = []    # Used to build NSDF files
-        #### Some empty defaults
-        self.passiveDistrib = []
-        self.plotNames = [] # Need to get rid of this, use the existing dict
-        self.wavePlotNames = [] # Need to get rid of this, use the existing dict
+        #### Internal fields were already initialized above with defaults
+        # (passiveDistrib, plotNames, wavePlotNames, _endos, 
+        #  _finishedSaving, _modelFileNameList)
 
         if not moose.exists( '/library' ):
             library = moose.Neutral( '/library' )
@@ -755,7 +764,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             for key, val in i.items():
                 if key != "path":
                     temp.append( key )
-                    temp.append( str( value ) )
+                    temp.append( str( val ) )
             temp.append( "" )
         self.elecid.passiveDistribution = temp
 
@@ -1882,7 +1891,6 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             self.elecid = moose.loadModel( efile, '/library/' + elecname)
         else:
             nm = NeuroML()
-            print("in _loadElec, combineSegments = ", self.combineSegments)
             nm.readNeuroMLFromFile( efile, \
                     params = {'combineSegments': self.combineSegments, \
                     'createPotentialSynapses': True } )
@@ -2052,9 +2060,6 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             elecComptList = [ elec.spineFromCompartment[i.me] for i in mesh.elecComptList ]
             #elecComptList = moose.element( '/model/elec').spineIdsFromCompartmentIds[ mesh.elecComptList ]
             #elecComptList = mesh.elecComptMap
-            print( len( mesh.elecComptList ) )
-            for i,j in zip( elecComptList, mesh.elecComptList ):
-                print( "Lookup: {} {} {}; orig: {} {} {}".format( i.name, i.index, i.fieldIndex, j.name, j.index, j.fieldIndex ))
         else:
             #print("Building adapter: elecComptList '", mesh.elecComptList, "' on mesh: '", mesh.path , "' with elecRelPath = ", elecRelPath )
             elecComptList = mesh.elecComptList
@@ -2094,7 +2099,6 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             i[3].outputOffset = offset
             i[3].scale = scale
             if elecRelPath == 'spine':
-                print( "ISSPINE" )
                 # Check needed in case there were unmapped entries in 
                 # spineIdsFromCompartmentIds
                 elObj = i[0]
@@ -2105,9 +2109,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             else:
                 ePath = i[0].path + '/' + elecRelPath
                 #print( "EPATH = ", ePath )
-                #print( "NOT SPINE", ePath )
                 if not( moose.exists( ePath ) ):
-                    print( "NOT SPINE", ePath, "DOESN'T EXIST, bailing" )
                     continue
                     #raise BuildError( "Error: buildAdaptor: no elec obj in " + ePath )
                 elObj = moose.element( i[0].path + '/' + elecRelPath )
@@ -2221,4 +2223,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
