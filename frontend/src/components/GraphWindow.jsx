@@ -81,9 +81,8 @@ const GraphWindow = memo(({ svgPlotFilename, isPlotReady, plotError }) => {
               image={LandingGraphic}
               sx={{
                 objectFit: 'contain',
-                maxWidth: '80%',
-                maxHeight: '80%',
-                // FIX: Opacity removed to make the image fully visible.
+                maxWidth: '100%',
+                maxHeight: '100%',
               }}
             />
         )}
