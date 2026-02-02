@@ -1,9 +1,9 @@
 ## Table Of Contents
-- [Introduction](#jardesigner_documentation)
+- [Introduction](#jardesigner-documentation)
 - [Quick Overview](#quick-overview)
 - [Handling Paths](#handling-paths)
   - [Electrical Model Paths](#electrical-model-paths)
-  - [Chemical Model Paths](#electrical-model-paths)
+  - [Chemical Model Paths](#chemical-model-paths)
     - [Molecule Paths](#molecule-paths)
 - [The 3D display](#the-3d-display)
 - [Menu Boxes](#details-of-each-menu-box)
@@ -305,7 +305,7 @@ Relative paths point to objects nested under the compartments. For example,
 the Na ion channel on the soma will be located at **soma/Na**. When accessing
 the relative paths the dialogs do not need the intervening /.
 
-## Chemical model paths.
+## Chemical model paths
 
 Things get more involved for paths for reactions. 
 
@@ -426,7 +426,7 @@ Moogli displays a few additional items:
 
 
 
-# Details of each menu box.
+# Details of each menu box
 
 To be filled
 
@@ -444,4 +444,3 @@ The JSON model has several primary keys that control the simulation.
 | `turnOffElec`| boolean | If `true`, electrical simulations are disabled. |
 
 ---
-
