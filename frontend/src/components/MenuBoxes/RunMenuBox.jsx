@@ -48,11 +48,14 @@ const InfoTooltip = ({ title }) => (
 
 const RunMenuBox = ({
     onConfigurationChange,
-    setRunParameters, // NEW: Receive the lightweight updater function
+    setRunParameters, // Receive the lightweight updater function
     currentConfig,
     onStartRun,
+    onPauseRun,       // Pause handler
+    onResumeRun,      // Resume handler
     onResetRun,
     isSimulating,
+    isPaused,         // Pause state
     activeSimPid,
     liveFrameData,
     isReplaying,
@@ -83,7 +86,20 @@ const RunMenuBox = ({
 
     const [currentTime, setCurrentTime] = useState(0.0);
     const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
-    const [startButtonText, setStartButtonText] = useState('Start');
+
+    // Compute button text based on state
+    const startButtonText = isSimulating 
+        ? 'Running...' 
+        : isPaused 
+            ? 'Continue' 
+            : currentTime > 0 
+                ? 'Continue' 
+                : 'Start';
+
+    // Compute button states
+    const canStart = !isSimulating && !isPaused && activeSimPid;
+    const canPause = isSimulating && !isPaused;
+    const canResume = isPaused;
 
     // Use a ref to store the onConfigurationChange function to use in the cleanup effect
     const onConfigurationChangeRef = useRef(onConfigurationChange);
@@ -94,6 +110,8 @@ const RunMenuBox = ({
     useEffect(() => {
         if (isReplaying) {
             setStatusMessage({ type: 'info', text: 'Replaying simulation in 3D viewer...' });
+        } else if (isPaused) {
+            setStatusMessage({ type: 'warning', text: `Simulation paused. Click Continue to resume.` });
         } else if (isSimulating) {
             setStatusMessage({ type: 'info', text: `Simulation running (PID: ${activeSimPid})...` });
         } else if (activeSimPid) {
@@ -101,7 +119,7 @@ const RunMenuBox = ({
         } else {
             setStatusMessage({ type: 'info', text: 'No active simulation. Change a setting to build the model.' });
         }
-    }, [isSimulating, isReplaying, activeSimPid]);
+    }, [isSimulating, isReplaying, isPaused, activeSimPid, currentTime]);
 
 	useEffect(() => {
     	const frameForRunView = liveFrameData?.run;
@@ -109,16 +127,6 @@ const RunMenuBox = ({
         	setCurrentTime(frameForRunView.timestamp);
     	}
 	}, [liveFrameData]);
-
-    useEffect(() => {
-        const simHasFinished = !isSimulating && currentTime > 0;
-        if (simHasFinished) {
-            setStartButtonText('Continue');
-        } else {
-            setStartButtonText('Start');
-        }
-    }, [isSimulating, currentTime]);
-
 
     const handleRuntimeChange = (value) => setRuntime(value);
     const updateClock = (field, value) => setClocks((prev) => ({ ...prev, [field]: value }));
@@ -165,9 +173,15 @@ const RunMenuBox = ({
     }, [buildConfigPayload]);
 
     const handleStart = () => {
+        // If paused, resume instead of starting fresh
+        if (isPaused && onResumeRun) {
+            onResumeRun();
+            return;
+        }
+
         const latestConfig = buildConfigPayload();
         
-        // For a new "Start", trigger the full check-and-rebuild logic.
+        // For a "Start", trigger the full check-and-rebuild logic.
         if (currentTime === 0) {
             if (onConfigurationChange) {
                 onConfigurationChange(latestConfig);
@@ -186,8 +200,11 @@ const RunMenuBox = ({
         }
     };
 
+    // Pause handler
     const handlePause = () => {
-        setStatusMessage({ type: 'warning', text: 'Pause functionality is not implemented.' });
+        if (onPauseRun) {
+            onPauseRun();
+        }
     };
 
     const handleReset = () => {
@@ -200,9 +217,51 @@ const RunMenuBox = ({
     return (
         <Box sx={{ p: 2, background: '#f5f5f5', borderRadius: 2 }}>
             <Grid container spacing={1} sx={{ mb: 2 }}>
-                <Grid item xs={4}><Button variant="contained" fullWidth startIcon={isSimulating ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />} sx={{ bgcolor: 'success.main', '&:hover': { bgcolor: 'success.dark' } }} onClick={handleStart} disabled={isSimulating || !activeSimPid}>{startButtonText}</Button></Grid>
-                <Grid item xs={4}><Button variant="contained" fullWidth startIcon={<PauseIcon />} sx={{ bgcolor: '#ffeb3b', color: 'rgba(0, 0, 0, 0.87)', '&:hover': { bgcolor: '#fdd835' } }} onClick={handlePause} disabled={!isSimulating}>Pause</Button></Grid>
-                <Grid item xs={4}><Button variant="contained" fullWidth startIcon={<StopIcon />} sx={{ bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' } }} onClick={handleReset} disabled={!activeSimPid}>Reset</Button></Grid>
+                <Grid item xs={4}>
+                    <Button 
+                        variant="contained" 
+                        fullWidth 
+                        startIcon={isSimulating ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />} 
+                        sx={{ 
+                            bgcolor: isPaused ? '#ff9800' : 'success.main',  // Orange when paused
+                            '&:hover': { bgcolor: isPaused ? '#f57c00' : 'success.dark' },
+                            '&.Mui-disabled': { bgcolor: 'grey.400', color: 'grey.100' }
+                        }} 
+                        onClick={handleStart} 
+                        disabled={isSimulating || (!canStart && !canResume)}  // Enable when can resume
+                    >
+                        {startButtonText}
+                    </Button>
+                </Grid>
+                <Grid item xs={4}>
+                    <Button 
+                        variant="contained" 
+                        fullWidth 
+                        startIcon={<PauseIcon />} 
+                        sx={{ 
+                            bgcolor: '#ffeb3b', 
+                            color: 'rgba(0, 0, 0, 0.87)', 
+                            '&:hover': { bgcolor: '#fdd835' },
+                            '&.Mui-disabled': { bgcolor: 'grey.300', color: 'rgba(0, 0, 0, 0.26)' }
+                        }} 
+                        onClick={handlePause} 
+                        disabled={!canPause}  // Only enable when simulation is running
+                    >
+                        Pause
+                    </Button>
+                </Grid>
+                <Grid item xs={4}>
+                    <Button 
+                        variant="contained" 
+                        fullWidth 
+                        startIcon={<StopIcon />} 
+                        sx={{ bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' } }} 
+                        onClick={handleReset} 
+                        disabled={!activeSimPid}
+                    >
+                        Reset
+                    </Button>
+                </Grid>
             </Grid>
 
             {statusMessage.text && <Alert severity={statusMessage.type || 'info'} sx={{ mb: 2, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{statusMessage.text}</Alert>}
