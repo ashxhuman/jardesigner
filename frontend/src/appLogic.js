@@ -94,6 +94,7 @@ export const useAppLogic = () => {
     const [isPlotReady, setIsPlotReady] = useState(isStandalone);
     const [plotError, setPlotError] = useState('');
     const [isSimulating, setIsSimulating] = useState(false);
+    const [isPaused, setIsPaused] = useState(false);  // Pause state
     const [clientId] = useState(() => uuidv4());
     const [activeSim, setActiveSim] = useState({ pid: null, data_channel_id: null, svg_filename: null });
     const socketRef = useRef(null);
@@ -209,6 +210,7 @@ export const useAppLogic = () => {
 
         const onSimulationEnded = () => {
             setIsSimulating(false);
+            setIsPaused(false);  // Reset pause state when simulation ends
             frameQueueRef.current = [];
             const currentFilename = activeSimRef.current.svg_filename;
             if (currentFilename) {
@@ -331,11 +333,29 @@ export const useAppLogic = () => {
             handleRewindReplay();
         } else { frameQueueRef.current = []; }
         setIsSimulating(true);
+        setIsPaused(false);  // Ensure not paused when starting
         socketRef.current.emit('sim_command', { command: 'start', pid: activeSim.pid, params: { runtime: jsonData.runtime } });
     }, [activeSim.pid, jsonData.runtime, simulationFrames, handleRewindReplay]);
 
+    // Pause handler
+    const handlePauseRun = useCallback(() => {
+        if (!activeSim.pid || !socketRef.current?.connected) return;
+        socketRef.current.emit('sim_command', { command: 'pause', pid: activeSim.pid });
+        setIsSimulating(false);
+        setIsPaused(true);
+    }, [activeSim.pid]);
+
+    // Resume handler
+    const handleResumeRun = useCallback(() => {
+        if (!activeSim.pid || !socketRef.current?.connected) return;
+        socketRef.current.emit('sim_command', { command: 'resume', pid: activeSim.pid });
+        setIsSimulating(true);
+        setIsPaused(false);
+    }, [activeSim.pid]);
+
     const handleResetRun = useCallback(async () => {
         setIsSimulating(false);
+        setIsPaused(false);  // Reset pause state
         setSimulationFrames({ [VIEW_IDS.SETUP]: [], [VIEW_IDS.RUN]: [] });
         setThreeDConfigs({ [VIEW_IDS.SETUP]: null, [VIEW_IDS.RUN]: null });
         setMeshMolsData({ [VIEW_IDS.SETUP]: null, [VIEW_IDS.RUN]: null });
@@ -387,8 +407,8 @@ export const useAppLogic = () => {
     // --- Compatibility Layer ---
     const baseProps = {
         activeMenu, toggleMenu, jsonData, jsonContent, svgPlotFilename,
-        isPlotReady, plotError, isSimulating, activeSim, clientId,
-        updateJsonData, setRunParameters, handleStartRun, handleResetRun, updateJsonString, 
+        isPlotReady, plotError, isSimulating, isPaused, activeSim, clientId,  // Added isPaused
+        updateJsonData, setRunParameters, handleStartRun, handlePauseRun, handleResumeRun, handleResetRun, updateJsonString,  // Added handlePauseRun, handleResumeRun
         handleClearModel, getCurrentJsonData, getChemProtos, setActiveMenu, handleMorphologyFileChange,
         replayTime, totalRuntime, isReplaying, replayInterval, 
 		setReplayInterval, liveFrameData,
