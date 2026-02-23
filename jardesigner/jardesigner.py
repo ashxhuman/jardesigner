@@ -16,7 +16,6 @@
 ## latter in the former, including mapping entities like calcium and
 ## channel conductances, between them.
 ##########################################################################
-#from __future__ import print_function, absolute_import, division
 import json
 import jsonschema
 import importlib.util
@@ -26,14 +25,16 @@ import numpy as np
 import math
 import sys
 import time
+import threading
 import matplotlib.pyplot as plt
 import argparse
 import requests
 import csv
+import traceback
 from . import jarmoogli
 from . import jardesignerProtos as jp
+from . import jarReacGraph as jrg
 from . import fixXreacs
-#import moose.fixXreacs as fixXreacs
 
 from moose.neuroml.NeuroML import NeuroML
 from moose.neuroml.ChannelML import ChannelML
@@ -252,6 +253,7 @@ class JarDesigner:
         self.moogli = []
         self.chanDistrib = []
         self.chemDistrib = []
+        self.passiveDistrib = []
         self.adaptorElecComptList = {}
         self.comptDict = {}     # dict of chem compartments
         self.meshDict = {}      # dict of neuroMesh,spineMesh,psdMesh etc
@@ -279,8 +281,8 @@ class JarDesigner:
             print(f"Model file '{jsonFile}' is not a json file.")
             quit()
         if plotFile != None:
-            if not (plotFile.endswith(".svg") or plotFile.endswith(".png") ):
-                print(f"Plot file '{plotFile}' should be svg or png.")
+            if not (plotFile.endswith(".svg") or plotFile.endswith(".png") or plotFile.endswith(".json") ):
+                print(f"Plot file '{plotFile}' should be json or svg or png.")
                 quit()
         self.plotFile = plotFile
         with open(schemaFile_path) as f:
@@ -315,9 +317,13 @@ class JarDesigner:
         #### Check for command line overrides of content in json file.
         if verbose:
             self.verbose = True
-        #### Internal fields were already initialized above with defaults
-        # (passiveDistrib, plotNames, wavePlotNames, _endos, 
-        #  _finishedSaving, _modelFileNameList)
+        #### Some internal fields
+        self._endos = []
+        self._finishedSaving = False
+        self._modelFileNameList = []    # Used to build NSDF files
+        #### Some empty defaults
+        self.plotNames = [] # Need to get rid of this, use the existing dict
+        self.wavePlotNames = [] # Need to get rid of this, use the existing dict
 
         if not moose.exists( '/library' ):
             library = moose.Neutral( '/library' )
@@ -766,6 +772,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                     temp.append( key )
                     temp.append( str( val ) )
             temp.append( "" )
+        #print( "Passive distrib = ", temp )
         self.elecid.passiveDistribution = temp
 
     def buildChanDistrib( self ):
@@ -1260,6 +1267,10 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                 ret.append( path )
             self.meshMols[ cc.name ] = ret
 
+    def _buildReactionGraph( self ):
+        #rpath = os.path.abspath(os.path.join(self.sessionDir, "reaction_graph.json") )
+        return jrg.get_reaction_graph( "/library" )
+
     def _buildSetupMoogli( self ):
         self.setupMooView = jarmoogli.MooView( self.dataChannelId )
         comptGroupId = "{}_{}_{}".format( "compt", "Vm", 0 )
@@ -1450,6 +1461,30 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         self._save()                                            
         self.display( startIndex, block )
 
+    def plots2json( self, nrows, ncols, plotFile ):
+        numPlots = len( self.plotNames )
+        payload = { "numPlots": numPlots,
+                "nrows": nrows,
+                "ncols": ncols,
+                "plots": []
+        }
+        for idx, pp in enumerate( self.plotNames ):
+            vtab = moose.vec( pp[0] )
+            payload["plots"].append( 
+                {
+                    "title": pp[1],
+                    "xlabel": "Time (s)",
+                    "ylabel": pp[4],
+                    "isRaster": (pp[5] == "spikeTime"),
+                    "numSubPlots": len( vtab ),
+                    "tmax": moose.element( "/clock").currentTime,
+                    "dt": vtab[0].dt,
+                    "val": [(vv.vector*pp[3]).tolist() for vv in vtab]
+                } 
+            )
+        with open(plotFile, 'w') as f:
+            json.dump(payload, f)
+
     def display( self, startIndex = 0, block=True ):
         FIG_HT = 5
         FIG_WID = 6
@@ -1474,6 +1509,10 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         else:
             sx = 3 * FIG_HT
             sy = 3 * FIG_WID
+
+        if self.plotFile.split('.')[-1] == "json":
+            self.plots2json( nrows, ncols, self.plotFile )
+            return
 
         fig, axes = plt.subplots( nrows = nrows, ncols = ncols, 
             figsize = (sx, sy), squeeze = False )
@@ -1806,50 +1845,6 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             assert len(i) >= 8
             self._buildAdaptor( i[0],i[1],i[2],i[3],i[4],i[5],i[6],i[7] )
 
-    '''
-    ################################################################
-    # Utility function to add a single spine to the given parent.
-
-    # parent is parent compartment for this spine.
-    # spineProto is just that.
-    # pos is position (in metres ) along parent compartment
-    # angle is angle (in radians) to rotate spine wrt x in plane xy.
-    # Size is size scaling factor, 1 leaves as is.
-    # x, y, z are unit vectors. Z is along the parent compt.
-    # We first shift the spine over so that it is offset by the parent compt
-    # diameter.
-    # We then need to reorient the spine which lies along (i,0,0) to
-    #   lie along x. X is a unit vector so this is done simply by
-    #   multiplying each coord of the spine by x.
-    # Finally we rotate the spine around the z axis by the specified angle
-    # k is index of this spine.
-    def _addSpine( self, parent, spineProto, pos, angle, x, y, z, size, k ):
-        spine = moose.copy( spineProto, parent.parent, 'spine' + str(k) )
-        kids = spine[0].children
-        coords = []
-        ppos = np.array( [parent.x0, parent.y0, parent.z0] )
-        for i in kids:
-            #print i.name, k
-            j = i[0]
-            j.name += str(k)
-            #print 'j = ', j
-            coords.append( [j.x0, j.y0, j.z0] )
-            coords.append( [j.x, j.y, j.z] )
-            self._scaleSpineCompt( j, size )
-            moose.move( i, self.elecid )
-        origin = coords[0]
-        #print 'coords = ', coords
-        # Offset it so shaft starts from surface of parent cylinder
-        origin[0] -= parent.diameter / 2.0
-        coords = np.array( coords )
-        coords -= origin # place spine shaft base at origin.
-        rot = np.array( [x, [0,0,0], [0,0,0]] )
-        coords = np.dot( coords, rot )
-        moose.delete( spine )
-        moose.connect( parent, "raxial", kids[0], "axial" )
-        self._reorientSpine( kids, coords, ppos, pos, size, angle, x, y, z )
-
-    '''
     ################################################################
     ## The spineid is the parent object of the prototype spine. The
     ## spine prototype can include any number of compartments, and each
@@ -2018,7 +2013,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         #comptlist = moose.wildcardFind( chem.path + '/##[ISA=ChemCompt]' )
         comptlist = moose.wildcardFind( '/library/##[ISA=ChemCompt]' )
         if len( comptlist ) == 0:
-            print("loadChem: No compartment found in file: ", fname)
+            print("Error: loadChem: No compartment found in file: ", fname)
             return
         fixXreacs.fixXreacs( chem.path )
         self.comptDict.update( {cc.name:cc.path for cc in comptlist } )
@@ -2110,6 +2105,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                 ePath = i[0].path + '/' + elecRelPath
                 #print( "EPATH = ", ePath )
                 if not( moose.exists( ePath ) ):
+                    print( "Error: NOT SPINE", ePath, "DOESN'T EXIST, bailing" )
                     continue
                     #raise BuildError( "Error: buildAdaptor: no elec obj in " + ePath )
                 elObj = moose.element( i[0].path + '/' + elecRelPath )
@@ -2144,47 +2140,34 @@ def randomPlacementFunc( numModels, idx ):
     nx = int( np.sqrt( numModels ) )
     return np.random.random()*0.5e-3, np.random.random()*0.5e-3, 0.0
 
+# ============================================================================
+# Pause/Resume Threading Support
+# ============================================================================
+_simulation_thread = None
+_is_paused = False
+_remaining_runtime = 0
+_target_simtime = 0
 
-
-def main():
-    #global rdes # Needed for the function called by the clocked functions.
-    parser = argparse.ArgumentParser(description="Load and optionally run MOOSE model specified using jardesigner.")
-    parser.add_argument( "file", type=str, help = "Required: Filename of model file, in json format." )
-    parser.add_argument( '-r', '--run', action="store_true", help='Run model immediately upon loading, as per directives in rdes file.' )
-    parser.add_argument( '-p', '--plotFile', type=str, help='Optional: Save plots to an svg file with the specified name, instead of displaying them.' )
-    parser.add_argument( '--placementFunc', type=str, help='Optional: Pick a builtin placement function for multiple models. Options: squareGrid, random. Default: None' )
-    parser.add_argument( '-n', '--numModels', type=int, help='Optional: Number of models to make. Default = 1', default = 1 )
-    parser.add_argument( '-v', '--verbose', action="store_true", help='Verbose flag. Prints out diagnostics when set.' )
-    parser.add_argument('--data-channel-id', help='Unique ID for this simulation run, used in server mode for jardesigner interface. If not set we are in standalone mode.')
-    parser.add_argument('--session-path', type=str, help='Temp directory for model and plot files, used in server mode for jardesigner interface.')
-    args = parser.parse_args()
-    rdes = JarDesigner( args.file, plotFile = args.plotFile, 
-        jsonData = None, dataChannelId = args.data_channel_id, 
-        sessionDir = args.session_path,
-        verbose = args.verbose )
-    context.setContext( rdes )
-    pf = None
-    if args.placementFunc == "squareGrid":
-        pf = squareGridPlacementFunc
-    elif args.placementFunc == "random":
-        pf = randomPlacementFunc
-    rdes.buildModel( numModels = args.numModels, placementFunc = pf )
-    #print( "jardesigner.py: built model" )
-    if rdes.dataChannelId:
-        rdes._buildSetupMoogli()
-        rdes.setupMooView.sendSceneGraph( "setup", meshMols=rdes.meshMols )
-        #print( "jardesigner.py: sent SceneGraph1 with meshMols:", rdes.meshMols )
-
-    moose.reinit()
-    if args.run and args.data_channel_id == None: # local run
-        #print( "Running locally")
-        moose.start( rdes.runtime )
+def _run_simulation(rdes, runtime):
+    """Run MOOSE simulation in background thread."""
+    global _remaining_runtime, _target_simtime, _is_paused
+    
+    start_simtime = moose.element("/clock").currentTime
+    _target_simtime = start_simtime + runtime
+    
+    moose.start(runtime)
+    
+    current_simtime = moose.element("/clock").currentTime
+    _remaining_runtime = max(0, _target_simtime - current_simtime)
+    
+    if _remaining_runtime <= 1e-9 and not _is_paused:
         rdes.display()
-        if rdes.runMooView and len( rdes.moogli ) > 0:
-            rdes.runMooView.sendSceneGraph( "run" )
-            rdes.runMooView.notifySimulationEnd( None )
-        quit()
+        time.sleep(0.1)
+        rdes.runMooView.notifySimulationEnd(rdes.dataChannelId)
 
+def serverCommandLoop( rdes ):
+    global _simulation_thread, _is_paused, _remaining_runtime
+    
     # This loop will wait for commands from server.py via stdin
     for line in sys.stdin:
         try:
@@ -2194,32 +2177,118 @@ def main():
 
             if command == "start":
                 runtime = command_data.get("params", {}).get("runtime", rdes.runtime)
-                if moose.element( "/clock" ).currentTime == 0:
-                    if hasattr( rdes, 'moogli' ) and len(rdes.moogli) > 0:
-                        rdes.runMooView.sendSceneGraph( "run" )
+                if moose.element("/clock").currentTime == 0:
+                    if hasattr(rdes, 'moogli') and len(rdes.moogli) > 0:
+                        rdes.runMooView.sendSceneGraph("run")
 
-                print( "starting on rdes = ", rdes )
-                moose.start(runtime)
-                # Notify client that the run is finished
-                rdes.display()
-                time.sleep(0.1) # Give the filesystem time to flush
-                rdes.runMooView.notifySimulationEnd( rdes.dataChannelId )
+                _is_paused = False
+                _remaining_runtime = runtime
+
+                _simulation_thread = threading.Thread(
+                    target=_run_simulation,
+                    args=(rdes, runtime),
+                    daemon=True
+                )
+                _simulation_thread.start()
+
+            elif command == "pause":
+                if _simulation_thread and _simulation_thread.is_alive():
+                    _is_paused = True
+                    moose.stop()
+                    _simulation_thread.join(timeout=2.0)
+                    print(f"Paused at t={moose.element('/clock').currentTime:.4f}s", flush=True)
+
+            elif command == "resume":
+                if _is_paused and _remaining_runtime > 1e-9:
+                    _is_paused = False
+                    _simulation_thread = threading.Thread(
+                        target=_run_simulation,
+                        args=(rdes, _remaining_runtime),
+                        daemon=True
+                    )
+                    _simulation_thread.start()
+                    print("Simulation resumed", flush=True)
 
             elif command == "reset":
+                if _simulation_thread and _simulation_thread.is_alive():
+                    moose.stop()
+                    _simulation_thread.join(timeout=2.0)
+                _is_paused = False
+                _remaining_runtime = 0
                 moose.reinit()
 
             elif command == "quit":
+                if _simulation_thread and _simulation_thread.is_alive():
+                    moose.stop()
+                    _simulation_thread.join(timeout=2.0)
                 print("Received 'quit' command. Exiting.")
-                break # Exit the while loop and terminate the script
+                break
+
             else:
                 print(f"Warning: Unknown command '{command}'")
 
         except json.JSONDecodeError:
             print(f"Warning: Received non-JSON command: {line.strip()}")
 
-        # Ensure the output buffer is flushed so the server sees the prints
         sys.stdout.flush()
 
+
+def main():
+    try:
+        parser = argparse.ArgumentParser(description="Load and optionally run MOOSE model specified using jardesigner.")
+        parser.add_argument( "file", type=str, help = "Required: Filename of model file, in json format." )
+        parser.add_argument( '-r', '--run', action="store_true", help='Run model immediately upon loading, as per directives in rdes file.' )
+        parser.add_argument( '-p', '--plotFile', type=str, help='Optional: Save plots to an svg file with the specified name, instead of displaying them.' )
+        parser.add_argument( '--placementFunc', type=str, help='Optional: Pick a builtin placement function for multiple models. Options: squareGrid, random. Default: None' )
+        parser.add_argument( '-n', '--numModels', type=int, help='Optional: Number of models to make. Default = 1', default = 1 )
+        parser.add_argument( '-v', '--verbose', action="store_true", help='Verbose flag. Prints out diagnostics when set.' )
+        parser.add_argument('--data-channel-id', help='Unique ID for this simulation run, used in server mode for jardesigner interface. If not set we are in standalone mode.')
+        parser.add_argument('--session-path', type=str, help='Temp directory for model and plot files, used in server mode for jardesigner interface.')
+        args = parser.parse_args()
+        rdes = JarDesigner( args.file, plotFile = args.plotFile, 
+            jsonData = None, dataChannelId = args.data_channel_id, 
+            sessionDir = args.session_path,
+            verbose = args.verbose )
+        context.setContext( rdes )
+        pf = None
+        if args.placementFunc == "squareGrid":
+            pf = squareGridPlacementFunc
+        elif args.placementFunc == "random":
+            pf = randomPlacementFunc
+        rdes.buildModel( numModels = args.numModels, placementFunc = pf )
+        #print( "jardesigner.py: built model" )
+        if rdes.dataChannelId:
+            rdes._buildSetupMoogli()
+            reacGraph = jrg.get_reaction_graph( "/library" )
+            #rdes._buildReactionGraph()
+            rdes.setupMooView.sendSceneGraph( "setup", meshMols=rdes.meshMols, reacGraph = reacGraph )
+            #print( "jardesigner.py: sent SceneGraph1 with meshMols:", rdes.meshMols )
+    
+        moose.reinit()
+        if args.run and args.data_channel_id == None: # local run
+            #print( "Running locally")
+            moose.start( rdes.runtime )
+            rdes.display()
+            if rdes.runMooView and len( rdes.moogli ) > 0:
+                rdes.runMooView.sendSceneGraph( "run" )
+                rdes.runMooView.notifySimulationEnd( None )
+            quit()
+    
+        serverCommandLoop( rdes )
+    except Exception as e:
+        # Create a structured error message
+        error_msg = {
+            # CHANGED: Use standard 'error' type in case frontend ignores 'sim_error'
+            "type": "error", 
+            "message": str(e),
+            "details": traceback.format_exc()
+        }
+        # Print JSON so server can parse it
+        print(json.dumps(error_msg))
+        sys.stdout.flush()
+        
+        # ADDED: Force non-zero exit code so server knows the process failed
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

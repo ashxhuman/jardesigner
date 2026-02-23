@@ -1,47 +1,113 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-    Box, Typography, Button, Grid, TextField, MenuItem
+    Box, Typography, Button, Grid, TextField, MenuItem, Divider,
+    Dialog, DialogTitle, DialogContent, DialogActions, IconButton
 } from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
 
-const FileMenuBox = ({ setJsonContent, onClearModel, currentConfig, getCurrentJsonData }) => {
-    // State from the current version for metadata
+// Importing logos
+import jardesLogo from '../../assets/jardes_logo.png';
+import mooseLogo from '../../assets/moose_logo.png';
+
+const API_BASE_URL = `http://${window.location.hostname}:5000`;
+
+const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, clientId }) => {
+    // --- Metadata State ---
     const [creator, setCreator] = useState('');
     const [license, setLicense] = useState('CC BY');
     const [modelNotes, setModelNotes] = useState('');
-
-    // State from the old version for the save dialog
+    const [lastModified, setLastModified] = useState('');
     const [modelFileName, setModelFileName] = useState('model');
-    const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+    // --- Dialog State ---
+    const [showAboutJardesigner, setShowAboutJardesigner] = useState(false);
+    const [showAboutMoose, setShowAboutMoose] = useState(false);
 
     const fileInputRef = useRef();
 
-    // Effect to populate metadata fields from the parent component's config
+    // --- Sync State with Config ---
     useEffect(() => {
         if (currentConfig) {
             setCreator(currentConfig.creator || '');
             setLicense(currentConfig.licence || 'CC BY');
             setModelNotes(currentConfig.modelNotes || '');
+            
+            if (currentConfig.dateTime) {
+                setLastModified(currentConfig.dateTime);
+            }
         }
     }, [currentConfig]);
 
-    // This is the save handler from FileMenuBox27_reallyworks.jsx,
-    // modified to include the metadata from the current component's state.
+    // --- Actions ---
+
+    const handleNew = () => {
+        window.open(window.location.href, '_blank').focus();
+    };
+
+    const handleQuit = () => {
+        window.close();
+    };
+
+    const handleLoadModel = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const nameWithoutExt = file.name.replace(/\.json$/i, "");
+        setModelFileName(nameWithoutExt);
+
+        const fileSystemTime = new Date(file.lastModified).toLocaleString();
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const fileContent = e.target.result;
+            try {
+                const parsed = JSON.parse(fileContent);
+                const info = parsed.fileinfo || {};
+                
+                // --- Update Properties from Loaded File ---
+                setCreator(info.creator || '');
+                setLicense(info.licence || 'CC BY');
+                setModelNotes(info.modelNotes || '');
+
+                const jsonTime = info.dateTime;
+                const displayTime = jsonTime || fileSystemTime || new Date().toLocaleString();
+                
+                setLastModified(displayTime);
+
+                if (setJsonContent) {
+                    setJsonContent(fileContent);
+                }
+            } catch (err) {
+                console.error("Error parsing JSON:", err);
+                alert("Failed to load model file.");
+            }
+        };
+        reader.readAsText(file);
+        
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
     const handleSaveModel = async () => {
         if (!getCurrentJsonData) {
             alert("Error: Cannot access current model data to save.");
             return;
         }
 
-        // 1. Get the main body of the JSON from the parent component.
         const currentJsonData = getCurrentJsonData();
+        const currentTime = new Date().toLocaleString();
 
-        // 2. Combine it with the metadata from this component's state.
+        setLastModified(currentTime);
+
         const dataToSave = {
             ...currentJsonData,
             fileinfo: {
+                ...currentJsonData.fileinfo, 
                 creator,
                 licence: license,
                 modelNotes,
+                dateTime: currentTime 
             }
         };
 
@@ -49,7 +115,6 @@ const FileMenuBox = ({ setJsonContent, onClearModel, currentConfig, getCurrentJs
         const suggestedName = `${modelFileName || 'model'}.json`;
         const blob = new Blob([jsonDataString], { type: 'application/json' });
 
-        // 3. Use the showSaveFilePicker API with a fallback.
         if (window.showSaveFilePicker) {
             try {
                 const fileHandle = await window.showSaveFilePicker({
@@ -63,12 +128,9 @@ const FileMenuBox = ({ setJsonContent, onClearModel, currentConfig, getCurrentJs
                 await writableStream.write(blob);
                 await writableStream.close();
             } catch (err) {
-                if (err.name !== 'AbortError') {
-                    console.error('Error saving file:', err);
-                }
+                if (err.name !== 'AbortError') console.error('Error saving file:', err);
             }
         } else {
-            // Fallback for browsers that don't support the API
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = suggestedName;
@@ -79,37 +141,126 @@ const FileMenuBox = ({ setJsonContent, onClearModel, currentConfig, getCurrentJs
         }
     };
 
-    // Kept from the current, simpler version. It correctly delegates
-    // parsing and validation to the parent component.
-    const handleLoadModel = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const fileContent = e.target.result;
-            if (setJsonContent) {
-                setJsonContent(fileContent);
+    const handleDownloadProject = async () => {
+        if (!clientId) {
+            alert("Client ID is missing. Cannot download project.");
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/download_project/${clientId}`);
+            
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(errText || response.statusText);
             }
-        };
-        reader.readAsText(file);
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
+
+            const blob = await response.blob();
+            
+            // Format: jardes_YYYY-MM-DD_HH-MM-SS.zip
+            const now = new Date();
+            const dateStr = now.getFullYear() + "-" + 
+                            String(now.getMonth() + 1).padStart(2, '0') + "-" + 
+                            String(now.getDate()).padStart(2, '0') + "_" + 
+                            String(now.getHours()).padStart(2, '0') + "-" + 
+                            String(now.getMinutes()).padStart(2, '0') + "-" + 
+                            String(now.getSeconds()).padStart(2, '0');
+            
+            const fileName = `jardes_${dateStr}.zip`;
+
+            // Trigger Download
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+
+        } catch (error) {
+            console.error("Error downloading project:", error);
+            alert(`Failed to download project: ${error.message}`);
         }
     };
 
-    const handleConfirmClear = () => {
-        if (onClearModel) {
-            onClearModel();
-        }
-        setShowClearConfirm(false);
-    };
+    // --- Sub-components ---
+
+    const MenuButton = ({ label, onClick, sx, ...props }) => (
+        <Grid item xs={12}>
+            <Button
+                variant="contained"
+                fullWidth
+                sx={{ 
+                    bgcolor: '#e0e0e0', 
+                    color: 'black', 
+                    justifyContent: 'flex-start',
+                    pl: 2,
+                    ':hover': { bgcolor: '#bdbdbd' },
+                    ...sx
+                }}
+                onClick={onClick}
+                {...props}
+            >
+                {label}
+            </Button>
+        </Grid>
+    );
+
+    const InfoDialog = ({ open, onClose, title, logo, content }) => (
+        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                {title}
+                <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+            </DialogTitle>
+            <DialogContent dividers>
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
+                    <img src={logo} alt={`${title} Logo`} style={{ maxWidth: '300px', maxHeight: '200px', objectFit: 'contain' }} />
+                </Box>
+                <Box component="ul" sx={{ pl: 2 }}>
+                    {content.map((item, index) => (
+                        <li key={index} style={{ marginBottom: '12px' }}>
+                            <Typography variant="body1" sx={{ fontSize: '1.1rem' }}>{item}</Typography>
+                        </li>
+                    ))}
+                </Box>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Close</Button>
+            </DialogActions>
+        </Dialog>
+    );
 
     return (
-        <Box style={{ padding: '16px', background: '#f5f5f5', borderRadius: '8px' }}>
-            {/* === Save Model Section (Combined UI) === */}
-            <Typography variant="h6" gutterBottom>Save Current Model Config</Typography>
-            <Grid container spacing={1.5} sx={{ mb: 3, p: 1.5, border: '1px solid #e0e0e0', borderRadius: '4px' }}>
-                 <Grid item xs={12}>
+        <Box style={{ padding: '16px', background: '#f5f5f5', borderRadius: '8px', height: '100%', overflowY: 'auto' }}>
+            
+            {/* === Section 1: Main Actions === */}
+            <Grid container spacing={1}>
+                <MenuButton label="New" onClick={handleNew} />
+                
+                <Grid item xs={12}>
+                    <Button
+                        variant="contained"
+                        fullWidth
+                        sx={{ bgcolor: '#e0e0e0', color: 'black', justifyContent: 'flex-start', pl: 2, ':hover': { bgcolor: '#bdbdbd' } }}
+                        onClick={() => fileInputRef.current?.click()}
+                    >
+                        Load Model
+                    </Button>
+                    <input type="file" accept=".json" style={{ display: 'none' }} ref={fileInputRef} onChange={handleLoadModel} />
+                </Grid>
+
+                <MenuButton label="Load Tutorial" onClick={() => {}} /> 
+                <MenuButton label="Save Model" onClick={handleSaveModel} />
+                <MenuButton label="Download Project" onClick={handleDownloadProject} /> 
+            </Grid>
+
+            <Divider sx={{ my: 2, borderBottomWidth: 2 }} />
+
+            {/* === Section 2: Properties === */}
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>Properties</Typography>
+            <Grid container spacing={1.5}>
+                <Grid item xs={12}>
                     <TextField
                         fullWidth
                         size="small"
@@ -118,11 +269,11 @@ const FileMenuBox = ({ setJsonContent, onClearModel, currentConfig, getCurrentJs
                         onChange={(e) => setModelFileName(e.target.value)}
                     />
                 </Grid>
-                 <Grid item xs={12}>
+                <Grid item xs={12}>
                     <TextField
                         fullWidth
                         size="small"
-                        label="Model Creator Name"
+                        label="Model Creator"
                         value={creator}
                         onChange={(e) => setCreator(e.target.value)}
                     />
@@ -148,66 +299,75 @@ const FileMenuBox = ({ setJsonContent, onClearModel, currentConfig, getCurrentJs
                         size="small"
                         label="Model Notes"
                         multiline
-                        rows={4}
+                        rows={3}
                         value={modelNotes}
                         onChange={(e) => setModelNotes(e.target.value)}
                     />
                  </Grid>
                  <Grid item xs={12}>
-                    <Button
-                        variant="contained"
+                    <TextField
                         fullWidth
-                        sx={{ bgcolor: '#e0e0e0', color: 'black', ':hover': { bgcolor: '#bdbdbd' } }}
-                        onClick={handleSaveModel}
-                    >
-                        Save Model (.json)
-                    </Button>
-                </Grid>
+                        size="small"
+                        label="Last Modified"
+                        value={lastModified}
+                        InputProps={{
+                            readOnly: true,
+                        }}
+                        variant="filled"
+                    />
+                 </Grid>
             </Grid>
 
-            {/* === Load Model Section === */}
-            <Typography variant="h6" gutterBottom>Load Model Config</Typography>
-             <Grid container spacing={1.5} sx={{ mb: 3, p: 1.5, border: '1px solid #e0e0e0', borderRadius: '4px' }}>
-                 <Grid item xs={12}>
-                    <Button variant="contained" fullWidth sx={{ bgcolor: '#e0e0e0', color: 'black', ':hover': { bgcolor: '#bdbdbd' } }}
-                        onClick={() => fileInputRef.current?.click()}>
-                        Load Model Config (.json)
-                    </Button>
-                     <input type="file" accept=".json" style={{ display: 'none' }} ref={fileInputRef} onChange={handleLoadModel} />
-                </Grid>
+            <Divider sx={{ my: 2, borderBottomWidth: 2 }} />
+
+            {/* === Section 3: App Actions === */}
+            <Grid container spacing={1}>
+                <MenuButton label="Print" onClick={() => {}} /> 
+                <MenuButton label="About Jardesigner" onClick={() => setShowAboutJardesigner(true)} />
+                <MenuButton label="About MOOSE" onClick={() => setShowAboutMoose(true)} />
+                <MenuButton 
+                    label="Quit" 
+                    onClick={handleQuit} 
+                    sx={{ 
+                        color: '#c62828', 
+                        fontWeight: 'bold'
+                    }}
+                />
             </Grid>
 
-            {/* === Clear Model Section === */}
-            <Typography variant="h6" gutterBottom>Clear Model</Typography>
-            <Grid container spacing={1.5} sx={{ p: 1.5, border: '1px solid #e0e0e0', borderRadius: '4px' }}>
-                <Grid item xs={12}>
-                    <Button
-                        variant="contained"
-                        fullWidth
-                        sx={{ bgcolor: '#e0e0e0', color: 'black', ':hover': { bgcolor: '#bdbdbd' } }}
-                        onClick={() => setShowClearConfirm(true)}
-                    >
-                        Clear Model
-                    </Button>
-                </Grid>
-                 {showClearConfirm && (
-                    <Grid item xs={12} sx={{ mt: 2, textAlign: 'center' }}>
-                        <Typography variant="subtitle1" gutterBottom>Are you sure?</Typography>
-                        <Grid container spacing={2}>
-                            <Grid item xs={6}>
-                                <Button variant="contained" color="error" fullWidth onClick={handleConfirmClear}>
-                                    Yes
-                                </Button>
-                            </Grid>
-                            <Grid item xs={6}>
-                                <Button variant="contained" fullWidth sx={{ bgcolor: '#e0e0e0', color: 'black', ':hover': { bgcolor: '#bdbdbd' } }} onClick={() => setShowClearConfirm(false)}>
-                                    No, do not clear model
-                                </Button>
-                            </Grid>
-                        </Grid>
-                    </Grid>
-                )}
-            </Grid>
+            {/* === Dialogs === */}
+            
+            <InfoDialog 
+                open={showAboutJardesigner}
+                onClose={() => setShowAboutJardesigner(false)}
+                title="About Jardesigner"
+                logo={jardesLogo}
+                content={[
+                    "Jardesigner is a web-based, zero-installation GUI for building and running neuronal electrical and signaling models on MOOSE. Jardesigner encompasses the GUI, the model format in JSON, and the Python scripts which run the simulations on MOOSE.",
+                    "Jardesigner stands for Javascript App for Reaction-Diffusion and Electrical SIGnaling in NEuRons.",
+                    "Jardesigner version: currently 1.1",
+                    "Copyright (C) U.S. Bhalla, NCBS-TIFR, and CHINTA 2026",
+                    "Licensed under the GNU GPL Version 3.",
+                    "Project code is on GitHub at \"https://github.com/upibhalla/jardesigner\"",
+                    "Jardesigner documentation is at \"https://github.com/Pragathii-R/Jardesigner-Overview\""
+                ]}
+            />
+
+            <InfoDialog 
+                open={showAboutMoose}
+                onClose={() => setShowAboutMoose(false)}
+                title="About MOOSE"
+                logo={mooseLogo}
+                content={[
+                    "MOOSE is the Multiscale Object-Oriented Simulation Environment for modeling subcellular signaling, single neuron physiology, detailed and abstract neuronal networks.",
+                    "MOOSE version is currently 4.0.0, \"Jalebi\"",
+                    "Copyright (C) U.S. Bhalla, NCBS-TIFR, and CHINTA 2026",
+                    "Licensed under the GNU GPL Version 3.",
+                    "Project code is on GitHub at \"https://github.com/BhallaLab/moose\"",
+                    "MOOSE documentation is at \"https://moose.ncbs.res.in/\""
+                ]}
+            />
+
         </Box>
     );
 };

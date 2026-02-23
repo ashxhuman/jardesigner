@@ -1,19 +1,21 @@
-import React, { useState, memo, useCallback, useEffect, useRef } from 'react'; // Ensure useCallback is imported
+import React, { useState, memo, useCallback, useEffect, useRef } from 'react'; 
 import { Box, Tabs, Tab } from '@mui/material';
 import GraphWindow from './GraphWindow';
 import JsonText from './JsonText';
 import MarkdownText from './MarkdownText';
 import ThreeDViewer from './ThreeDViewer';
+import ReactionGraph from './ReactionGraph'; 
 
 const MemoizedGraphWindow = memo(GraphWindow);
 const MemoizedJsonText = memo(JsonText);
 const MemoizedMarkdownText = memo(MarkdownText);
+const MemoizedReactionGraph = memo(ReactionGraph);
 
 const DisplayWindow = (props) => {
   const {
     jsonContent,
     setActiveMenu,
-    svgPlotFilename,
+    plotDataUrl,
     isPlotReady,
     plotError,
     threeDConfigs,
@@ -28,26 +30,28 @@ const DisplayWindow = (props) => {
     handleStartReplay,
     handlePauseReplay,
     handleSeekReplay,
+    clientId,
+    isSimulating,
+    // 1. NEW: Receive the graph data from appLogic
+    reactionGraphs
   } = props;
 
+  // ... (Keep all existing hooks/logic exactly as is) ...
   const [tabIndex, setTabIndex] = useState(0);
   const prevThreeDConfigSetup = useRef();
 
   useEffect(() => {
     const hasNewSetupConfig = threeDConfigs?.setup && !prevThreeDConfigSetup.current;
     if (hasNewSetupConfig) {
-      // Switch to the "Setup 3D" tab (index 3)
       setTabIndex(3);
     }
-    // Keep track of the current config for the next render
     prevThreeDConfigSetup.current = threeDConfigs?.setup;
-  }, [threeDConfigs?.setup]); // Dependency array watches for config changes
+  }, [threeDConfigs?.setup]);
 
   const handleTabChange = (event, newValue) => {
     setTabIndex(newValue);
   };
   
-  // --- FIX: Wrap these state setters in useCallback ---
   const setSetupDrawableVisibility = useCallback((updater) => {
       setDrawableVisibility(prev => ({ ...prev, setup: typeof updater === 'function' ? updater(prev.setup) : updater }));
   }, [setDrawableVisibility]);
@@ -56,7 +60,6 @@ const DisplayWindow = (props) => {
       setDrawableVisibility(prev => ({ ...prev, run: typeof updater === 'function' ? updater(prev.run) : updater }));
   }, [setDrawableVisibility]);
 
-  // Stable callbacks for event handlers
   const onManagerReadySetup = useCallback((manager) => onManagerReady('setup', manager), [onManagerReady]);
   const onSelectionChangeSetup = useCallback((selection, isCtrlClick) => handleSelectionChange('setup', selection, isCtrlClick), [handleSelectionChange]);
   const onExplodeAxisToggleSetup = useCallback((axis) => onExplodeAxisToggle('setup', axis), [onExplodeAxisToggle]);
@@ -67,7 +70,6 @@ const DisplayWindow = (props) => {
   const onExplodeAxisToggleRun = useCallback((axis) => onExplodeAxisToggle('run', axis), [onExplodeAxisToggle]);
   const onSceneBuiltRun = useCallback((bbox) => onSceneBuilt('run', bbox), [onSceneBuilt]);
 
-
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#f5f5f5', borderRadius: '8px', overflow: 'hidden' }}>
       <Box sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
@@ -77,11 +79,14 @@ const DisplayWindow = (props) => {
           <Tab label="Documentation" />
           <Tab label="Setup 3D" />
           <Tab label="Run 3D" />
+          <Tab label="Reaction Graph" />
         </Tabs>
       </Box>
 
+      {/* ... (Keep existing TabPanels 0-4) ... */}
+
       <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 1, display: tabIndex === 0 ? 'flex' : 'none' }}>
-        <MemoizedGraphWindow svgPlotFilename={svgPlotFilename} isPlotReady={isPlotReady} plotError={plotError} />
+        <MemoizedGraphWindow plotDataUrl={plotDataUrl} isPlotReady={isPlotReady} plotError={plotError} />
       </Box>
 
       <Box sx={{ flexGrow: 1, overflowY: 'auto', display: tabIndex === 1 ? 'block' : 'none' }}>
@@ -92,8 +97,8 @@ const DisplayWindow = (props) => {
         <MemoizedMarkdownText />
       </Box>
       
-	  <Box sx={{ flexGrow: 1, overflow: 'hidden', display: tabIndex === 3 ? 'flex' : 'none', flexDirection: 'column', position: 'relative' }}>
-        {threeDConfigs?.setup && (
+      <Box sx={{ flexGrow: 1, overflow: 'hidden', display: tabIndex === 3 ? 'flex' : 'none', flexDirection: 'column', position: 'relative' }}>
+         {threeDConfigs?.setup && (
             <ThreeDViewer
               {...props}
               defaultDiaScale={2.5}
@@ -134,6 +139,14 @@ const DisplayWindow = (props) => {
               onSeekReplay={handleSeekReplay}
             />
         )}
+      </Box>
+
+      {/* 2. REACTION GRAPH PANEL (Tab Index 5) */}
+      <Box sx={{ flexGrow: 1, overflow: 'hidden', display: tabIndex === 5 ? 'flex' : 'none', position: 'relative' }}>
+         <MemoizedReactionGraph 
+             // Pass the Setup graph data specifically
+             graphData={reactionGraphs?.setup} 
+         />
       </Box>
     </Box>
   );
