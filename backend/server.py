@@ -27,6 +27,9 @@ CORS(app)
 # Quiet logging
 socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
 
+from neuromorpho.neuromorpho_bp import neuromorpho_bp
+app.register_blueprint(neuromorpho_bp, url_prefix="/neuromorpho")
+
 # --- Store running process and session info ---
 running_processes = {}
 client_sim_map = {}
