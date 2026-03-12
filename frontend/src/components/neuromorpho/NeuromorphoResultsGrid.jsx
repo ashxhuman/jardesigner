@@ -3,13 +3,11 @@ import { DataGrid } from '@mui/x-data-grid';
 import {
   Box,
   Button,
-  Chip,
   Typography,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  Stack,
   Divider,
   IconButton,
 } from '@mui/material';
@@ -60,7 +58,7 @@ function NeuronDetail({ neuron }) {
   );
 }
 
-export default function NeuromorphoResultsGrid({ results, cart, onCartChange, selectMorphology, mountMorphology }) {
+export default function NeuromorphoResultsGrid({ results, loading, rowCount, paginationMode, paginationModel, onPaginationModelChange, cart, onCartChange, selectMorphology, mountMorphology }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedNeuron, setSelectedNeuron] = useState(null);
 
@@ -155,8 +153,7 @@ export default function NeuromorphoResultsGrid({ results, cart, onCartChange, se
                     selectMorphology(null);
                   }
                   else{
-                    selectMorphology(params.row.neuron_id);
-                    console.log(isSelected);
+                    selectMorphology(params.row);
                   }
                 }}
             >
@@ -167,14 +164,6 @@ export default function NeuromorphoResultsGrid({ results, cart, onCartChange, se
     },
   ];
 
-  if (!results || results.length === 0) {
-    return (
-      <Box sx={{ marginTop: 4, textAlign: 'center' }}>
-        <Typography>No neurons found.</Typography>
-      </Box>
-    );
-  }
-
   return (
     <Box sx={{ display: 'flex', height: 450, width: '100%', marginTop: '20px' }}>
       <Box sx={{ flex: 1, height: '100%' }}>
@@ -182,8 +171,12 @@ export default function NeuromorphoResultsGrid({ results, cart, onCartChange, se
           rows={results}
           columns={columns}
           getRowId={(row) => row.neuron_id}
-          initialState={{ pagination: { paginationModel: { pageSize: 10, page: 0 } } }}
-          pageSizeOptions={[10, 25, 50]}
+          paginationMode={paginationMode}
+          rowCount={rowCount}
+          paginationModel={paginationModel}
+          onPaginationModelChange={onPaginationModelChange}
+          pageSizeOptions={[20, 50, 100]}
+          loading={loading}
           showToolbar
           disableRowSelectionOnClick
         />

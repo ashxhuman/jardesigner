@@ -258,6 +258,10 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
                                         />
                                     </Box>
                                 </DialogContent>
+                                <Typography sx={{ display: 'flex', justifyContent: 'center', gap: '6px', padding: 2 }}>
+                                    <span>Data from NeuroMorpho.Org.</span>
+                                    <a href="https://neuromorpho.org/useterm.jsp" target="_blank" rel="noopener noreferrer">Terms of Use</a>
+                                </Typography>
                             </Dialog>
                         </Box>
 
