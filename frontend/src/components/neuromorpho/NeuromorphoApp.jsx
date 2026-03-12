@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Box, Typography, CircularProgress } from '@mui/material';
 import NeuromorphoSearchBar from './NeuromorphoSearchBar';
 import NeuromorphoResultsGrid from './NeuromorphoResultsGrid';
@@ -30,53 +30,68 @@ export default function NeuromorphoApp({clientId, onFileChange, onClose}) {
   const [mountMorphology, setMountMorphology] = useState(null);
   const [morphLoading, setMorphLoading] = useState(false);
 
-  // Server-side pagination state
-  const [totalPages, setTotalPages] = useState(0);
-  const [currentPage, setCurrentPage] = useState(0);
+  const [rowCount, setRowCount] = useState(0);
+  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 20 });
   const lastQuery = useRef(null);
 
-  const handleSearch = async (query, page = 0) => {
-    if (!query.species) {
-      setError('Please select a species.');
-      return;
-    }
-    lastQuery.current = query;
-    setSearched(true);
+  const _fetchPage = async (query, page, pageSize) => {
     setLoading(true);
     setError(null);
     try {
       const resp = await fetch(`${BASE}/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...query, page }),
+        body: JSON.stringify({ ...query, page, size: pageSize }),
       });
       if (!resp.ok) throw new Error('Search request failed');
       const data = await resp.json();
       setResults(data.neurons || []);
-      setTotalPages(data.total_pages || 0);
-      setCurrentPage(data.current_page || 0);
+      setRowCount(data.page?.totalElements || 0);
     } catch (e) {
       setError(e.message);
       setResults([]);
+      setRowCount(0);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSelectMorphology = async (neuronId) => {
+  const handleSearch = async (query) => {
+    if (!query.species) {
+      setError('Please select a species.');
+      return;
+    }
+    lastQuery.current = query;
+    setSearched(true);
+    const newModel = { page: 0, pageSize: paginationModel.pageSize };
+    setPaginationModel(newModel);
+    await _fetchPage(query, 0, newModel.pageSize);
+  };
+
+  const handlePaginationChange = async (newModel) => {
+    setPaginationModel(newModel);
+    if (lastQuery.current) {
+      await _fetchPage(lastQuery.current, newModel.page, newModel.pageSize);
+    }
+  };
+
+  const handleSelectMorphology = async (neuron) => {
+    if (!neuron) { setMountMorphology(null); return; }
     if (!clientId) {
       setError('No client session available.');
       return;
     }
-     if (!onFileChange) { setError('onFileChange prop is missing.'); return; } 
+     if (!onFileChange) { setError('onFileChange prop is missing.'); return; }
 
+    const { neuron_id: neuronId, neuron_name: neuronName, archive } = neuron;
     setMountMorphology(neuronId);
     setMorphLoading(true);
     setError(null);
 
     try {
-      // STEP 1: Fetch SWC from neuromorpho blueprint
-      const swcResp = await fetch(`${BASE}/swc/${neuronId}`);
+      // STEP 1: Fetch SWC — pass name+archive to skip the metadata lookup round-trip
+      const params = new URLSearchParams({ name: neuronName, archive });
+      const swcResp = await fetch(`${BASE}/swc/${neuronId}?${params}`);
       if (!swcResp.ok) throw new Error('Failed to fetch SWC file');
       const swcText = await swcResp.text();
 
@@ -128,7 +143,7 @@ export default function NeuromorphoApp({clientId, onFileChange, onClose}) {
 
       <NeuromorphoSearchBar onSearch={handleSearch} loading={loading} />
 
-      {loading || morphLoading && (
+      {(loading || morphLoading) && (
         <Box sx={{ display: 'flex', justifyContent: 'center', marginTop: 4 }}>
           <CircularProgress />
           {
@@ -147,9 +162,14 @@ export default function NeuromorphoApp({clientId, onFileChange, onClose}) {
         </Typography>
       )}
 
-      {!loading && !error && searched && (
+      {searched && (
         <NeuromorphoResultsGrid
           results={results}
+          loading={loading}
+          rowCount={rowCount}
+          paginationMode="server"
+          paginationModel={paginationModel}
+          onPaginationModelChange={handlePaginationChange}
           cart={cart}
           onCartChange={setCart}
           mountMorphology={mountMorphology}

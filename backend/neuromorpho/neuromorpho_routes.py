@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -8,12 +7,13 @@ from flask_cors import cross_origin
 from .neuromorpho import (
     fetch_species,
     fetch_neuron_metadata,
+    fetch_swc_direct,
     fetch_swc_files,
     search_neurons,
 )
 from .storage import NeuronStorage
 
-neuromorpho_bp = Blueprint("neuromorpho", __name__)
+neuromorpho_routes = Blueprint("neuromorpho", __name__)
 
 # Cache directory for species metadata (shared across sessions)
 _CACHE_DIR = Path("data") / "neuromorpho"
@@ -38,7 +38,7 @@ def _get_storage() -> NeuronStorage:
 # Routes
 # ---------------------------------------------------------------------------
 
-@neuromorpho_bp.route("/", methods=["GET"])
+@neuromorpho_routes.route("/", methods=["GET"])
 @cross_origin()
 def get_species():
     """GET /neuromorpho/  — list all available species."""
@@ -48,7 +48,7 @@ def get_species():
         return jsonify({"error": str(e)}), 500
 
 
-@neuromorpho_bp.route("/metadata", methods=["GET"])
+@neuromorpho_routes.route("/metadata", methods=["GET"])
 @cross_origin()
 def get_metadata():
     """
@@ -79,7 +79,7 @@ def get_metadata():
         return jsonify({"error": str(e)}), 500
 
 
-@neuromorpho_bp.route("/search", methods=["POST"])
+@neuromorpho_routes.route("/search", methods=["POST"])
 @cross_origin()
 def search():
     """
@@ -90,12 +90,13 @@ def search():
     body = request.get_json(force=True, silent=True) or {}
 
     # Treat empty string the same as None — don't send blank filter to Solr
-    species     = body.get("species") or None
+    species      = body.get("species") or None
     brain_region = body.get("brain_region") or None
-    cell_type   = body.get("cell_type") or None
-    page        = body.get("page", 0)
+    cell_type    = body.get("cell_type") or None
+    page         = body.get("page", 0)
+    size         = body.get("size", 20)
 
-    print(f"[search] species={species!r} brain_region={brain_region!r} cell_type={cell_type!r} page={page}")
+    print(f"[search] species={species!r} brain_region={brain_region!r} cell_type={cell_type!r} page={page} size={size}")
 
     try:
         result = search_neurons(
@@ -103,6 +104,7 @@ def search():
             brain_region=brain_region,
             cell_type=cell_type,
             page=page,
+            size=size,
         )
     except Exception as e:
         traceback.print_exc()
@@ -110,20 +112,6 @@ def search():
 
     neurons = result.get("_embedded", {}).get("neuronResources", [])
     page_info = result.get("page", {})
-
-    def _matches(n, field, value):
-        """Check if neuron field contains value (handles str or list)."""
-        v = n.get(field)
-        if not v:
-            return False
-        if isinstance(v, list):
-            return any(value in item.lower() for item in v if item)
-        return value in str(v).lower()
-
-    if brain_region:
-        neurons = [n for n in neurons if _matches(n, "brain_region", brain_region.lower())]
-    if cell_type:
-        neurons = [n for n in neurons if _matches(n, "cell_type", cell_type.lower())]
 
     return jsonify({
         "neurons": neurons,
@@ -135,7 +123,7 @@ def search():
     })
 
 
-@neuromorpho_bp.route("/save-cart", methods=["POST"])
+@neuromorpho_routes.route("/save-cart", methods=["POST"])
 @cross_origin()
 def save_cart():
     """
@@ -179,7 +167,7 @@ def save_cart():
     })
 
 
-@neuromorpho_bp.route("/neurons", methods=["GET"])
+@neuromorpho_routes.route("/neurons", methods=["GET"])
 @cross_origin()
 def list_neurons():
     """GET /neuromorpho/neurons  — list all saved neurons for the session."""
@@ -188,7 +176,7 @@ def list_neurons():
     return jsonify({"neuron_count": len(neurons), "neurons": neurons})
 
 
-@neuromorpho_bp.route("/neurons/<int:neuron_id>", methods=["DELETE"])
+@neuromorpho_routes.route("/neurons/<int:neuron_id>", methods=["DELETE"])
 @cross_origin()
 def delete_neuron(neuron_id: int):
     """DELETE /neuromorpho/neurons/<id>"""
@@ -198,19 +186,27 @@ def delete_neuron(neuron_id: int):
     return jsonify({"error": f"Neuron {neuron_id} not found"}), 404
 
 
-@neuromorpho_bp.route("/storage-info", methods=["GET"])
+@neuromorpho_routes.route("/storage-info", methods=["GET"])
 @cross_origin()
 def storage_info():
     """GET /neuromorpho/storage-info  — disk usage for the session."""
     storage = _get_storage()
     return jsonify(storage.disk_usage())
 
-@neuromorpho_bp.route("/swc/<int:neuron_id>", methods=["GET"])
+@neuromorpho_routes.route("/swc/<int:neuron_id>", methods=["GET"])
 @cross_origin()
 def get_swc(neuron_id: int):
-    """fetch single SWC file as binary."""
+    """Fetch single SWC file. If name+archive are provided as query params,
+    skips the metadata lookup round-trip for faster response."""
+    name = request.args.get("name")
+    archive = request.args.get("archive")
+
     try:
-        successes, failures = fetch_swc_files([neuron_id])
+        if name and archive:
+            successes, failures = fetch_swc_direct(archive, name, neuron_id)
+        else:
+            successes, failures = fetch_swc_files([neuron_id])
+
         if not successes:
             return jsonify({"error": f"Could not fetch SWC for neuron {neuron_id}", "details": failures}), 404
 
@@ -222,7 +218,7 @@ def get_swc(neuron_id: int):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@neuromorpho_bp.route("/health", methods=["GET"])
+@neuromorpho_routes.route("/health", methods=["GET"])
 @cross_origin()
 def health():
     return jsonify({"status": "ok"})

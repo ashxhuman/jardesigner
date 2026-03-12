@@ -90,7 +90,6 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
             onChange={(e) => setSpecies(e.target.value)}
             disabled={loading}
           >
-            <MenuItem value=""><em>All</em></MenuItem>
             {speciesList.map((s) => (
               <MenuItem key={s} value={s}>{s.toLowerCase().split(' ').map(function(word) {return word.charAt(0).toUpperCase() + word.slice(1);}).join(' ')}</MenuItem>
             ))}

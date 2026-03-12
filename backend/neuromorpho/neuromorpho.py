@@ -1,31 +1,10 @@
-import ssl
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.poolmanager import PoolManager
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 BASE_URL = "http://cngpro.gmu.edu:8080/api"
-
-
-# ---------------------------------------------------------------------------
-# SSL adapter — strips DH ciphers that neuromorpho.org rejects
-# ---------------------------------------------------------------------------
-
-class _SSLAdapter(HTTPAdapter):
-    def init_poolmanager(self, connections, maxsize, block=False, **kwargs):
-        ctx = ssl.create_default_context()
-        ctx.set_ciphers("DEFAULT:!DH")
-        self.poolmanager = PoolManager(
-            num_pools=connections, maxsize=maxsize, block=block,
-            ssl_context=ctx, **kwargs
-        )
-
-
-def _session() -> requests.Session:
-    s = requests.Session()
-    s.mount("https://", _SSLAdapter())
-    return s
+USER_AGENT = "www.mooseneuro.org/1.0 (contact: mooseneuro@gmail.com)"
+_HEADERS = {"User-Agent": USER_AGENT}
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +26,7 @@ class NeuronSWCData:
 
 def fetch_species() -> List[str]:
     """Return a sorted list of all species available on NeuroMorpho."""
-    resp = requests.get(f"{BASE_URL}/neuron/fields/species", timeout=30)
+    resp = requests.get(f"{BASE_URL}/neuron/fields/species", headers=_HEADERS, timeout=30)
     resp.raise_for_status()
     return sorted(resp.json()["fields"])
 
@@ -57,19 +36,25 @@ def search_neurons(
     brain_region: Optional[str] = None,
     cell_type: Optional[str] = None,
     page: int = 0,
+    size: int = 20,
 ) -> Dict:
     """Paginated neuron search. Returns the raw API JSON.
 
-    Uses a list-of-tuples for params so repeated 'fq' keys are preserved.
-    Values are quoted so Solr handles multi-word names (e.g. "basal ganglia").
+    Uses POST /neuron/select with a JSON body to avoid URL-encoding issues.
+    Body format: {"field": ["value1", ...]}
+    Pagination params go in the query string.
     """
-    
-    params: List[tuple] = [("page", page)]
+    body: Dict[str, List[str]] = {}
     if species:
-        params.append(("q", f'species:"{species}"'))
+        body["species"] = [species]
+    if brain_region:
+        body["brain_region"] = [brain_region]
+    if cell_type:
+        body["cell_type"] = [cell_type]
 
-    print(f"[search_neurons] GET {BASE_URL}/neuron/select params={params}")
-    resp = requests.get(f"{BASE_URL}/neuron/select", params=params, timeout=30)
+    url = f"{BASE_URL}/neuron/select?page={page}&size={size}"
+    print(f"[search_neurons] POST {url} body={body}")
+    resp = requests.post(url, json=body, headers=_HEADERS, timeout=30)
     print(f"[search_neurons] status={resp.status_code}")
 
     # NeuroMorpho returns 404 when query has no results — treat as empty, not error
@@ -77,7 +62,10 @@ def search_neurons(
         return {"_embedded": {"neuronResources": []}, "page": {"totalPages": 0, "number": 0, "totalElements": 0}}
 
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    neurons = data.get("_embedded", {}).get("neuronResources", [])
+    print(f"[search_neurons] total_elements={data.get('page', {}).get('totalElements')} returned={len(neurons)}")
+    return data
 
 
 def fetch_neuron_metadata(species: str) -> Dict:
@@ -90,9 +78,10 @@ def fetch_neuron_metadata(species: str) -> Dict:
     # Get total page count using the same page size as the loop below.
     # Without size=500 the API returns totalPages based on ~20 items/page,
     # but the loop fetches 500/page — so page counts differ and 404s appear.
-    resp = requests.get(
-        f"{BASE_URL}/neuron/select",
-        params={"q": f'species:"{species}"', "size": 500},
+    resp = requests.post(
+        f"{BASE_URL}/neuron/select?page=0&size=500",
+        json={"species": [species]},
+        headers=_HEADERS,
         timeout=30,
     )
     resp.raise_for_status()
@@ -104,12 +93,12 @@ def fetch_neuron_metadata(species: str) -> Dict:
 
     for page in range(total_pages):
         try:
-            r = requests.get(
-                f"{BASE_URL}/neuron/select",
-                params={"q": f'species:"{species}"', "size": 500, "page": page},
+            r = requests.post(
+                f"{BASE_URL}/neuron/select?page={page}&size=500",
+                json={"species": [species]},
+                headers=_HEADERS,
                 timeout=40,
             )
-            # 404 means the page doesn't exist — stop iterating, don't crash
             if r.status_code == 404:
                 break
             r.raise_for_status()
@@ -121,13 +110,32 @@ def fetch_neuron_metadata(species: str) -> Dict:
         except Exception as e:
             print(f"[neuromorpho] page {page} failed: {e}")
 
-    # sorted() requires all items to be the same type — cast to str to be safe
     return {
         "species": [species],
         "brain_region": sorted(str(v) for v in brain_regions),
         "cell_type": sorted(str(v) for v in cell_types),
         "archive": sorted(str(v) for v in archives),
     }
+
+
+def fetch_swc_direct(archive: str, name: str, neuron_id: int) -> Tuple[List["NeuronSWCData"], List[Dict]]:
+    """
+    Download a single SWC file when archive and neuron_name are already known.
+    Skips the /neuron/id/{nid} metadata lookup — one fewer HTTP round-trip.
+    """
+    try:
+        swc = requests.get(f"https://neuromorpho.org/dableFiles/{archive.lower()}/CNG version/{name}.CNG.swc", headers=_HEADERS, timeout=40)
+        if swc.status_code != 200:
+            return [], [{"neuron_id": neuron_id, "error": f"SWC download failed: HTTP {swc.status_code}"}]
+        return [NeuronSWCData(
+            neuron_id=neuron_id,
+            neuron_name=name,
+            archive_name=archive.lower(),
+            swc_content=swc.text,
+            api_data={},
+        )], []
+    except Exception as e:
+        return [], [{"neuron_id": neuron_id, "error": str(e)}]
 
 
 def fetch_swc_files(neuron_ids: List[int]) -> Tuple[List[NeuronSWCData], List[Dict]]:
@@ -137,43 +145,37 @@ def fetch_swc_files(neuron_ids: List[int]) -> Tuple[List[NeuronSWCData], List[Di
     """
     successes: List[NeuronSWCData] = []
     failures: List[Dict] = []
-    session = _session()
+    for nid in neuron_ids:
+        try:
+            # Look up the neuron record to get archive + name
+            meta = requests.get(f"{BASE_URL}/neuron/id/{nid}", headers=_HEADERS, timeout=30)
+            meta.raise_for_status()
+            item = meta.json()
 
-    try:
-        for nid in neuron_ids:
-            try:
-                # Look up the neuron record to get archive + name
-                meta = requests.get(f"{BASE_URL}/neuron/id/{nid}", timeout=30)
-                meta.raise_for_status()
-                item = meta.json()
+            archive = item.get("archive", "").lower()
+            name = item.get("neuron_name", "")
 
-                archive = item.get("archive", "").lower()
-                name = item.get("neuron_name", "")
+            if not archive or not name:
+                failures.append({"neuron_id": nid, "error": "Missing archive or neuron_name"})
+                continue
 
-                if not archive or not name:
-                    failures.append({"neuron_id": nid, "error": "Missing archive or neuron_name"})
-                    continue
+            # Download the SWC file from neuromorpho.org
+            swc = requests.get(f"https://neuromorpho.org/dableFiles/{archive}/CNG version/{name}.CNG.swc", headers=_HEADERS, timeout=40)
 
-                # Download the SWC file from neuromorpho.org
-                url = f"https://neuromorpho.org/dableFiles/{archive}/CNG version/{name}.CNG.swc"
-                swc = session.get(url, headers={"User-Agent": "MOOSENeuro / ashish@ncbs.res.in"}, timeout=40)
+            if swc.status_code != 200:
+                failures.append({"neuron_id": nid, "error": f"SWC download failed: HTTP {swc.status_code}"})
+                continue
 
-                if swc.status_code != 200:
-                    failures.append({"neuron_id": nid, "error": f"SWC download failed: HTTP {swc.status_code}"})
-                    continue
+            successes.append(NeuronSWCData(
+                neuron_id=nid,
+                neuron_name=name,
+                archive_name=archive,
+                swc_content=swc.text,
+                api_data=item,
+            ))
 
-                successes.append(NeuronSWCData(
-                    neuron_id=nid,
-                    neuron_name=name,
-                    archive_name=archive,
-                    swc_content=swc.text,
-                    api_data=item,
-                ))
-
-            except Exception as e:
-                failures.append({"neuron_id": nid, "error": str(e)})
-    finally:
-        session.close()
+        except Exception as e:
+            failures.append({"neuron_id": nid, "error": str(e)})
 
     return successes, failures
 
