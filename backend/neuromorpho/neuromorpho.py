@@ -35,6 +35,7 @@ def search_neurons(
     species: Optional[str] = None,
     brain_region: Optional[str] = None,
     cell_type: Optional[str] = None,
+    archive: Optional[str] = None,
     page: int = 0,
     size: int = 20,
 ) -> Dict:
@@ -51,6 +52,8 @@ def search_neurons(
         body["brain_region"] = [brain_region]
     if cell_type:
         body["cell_type"] = [cell_type]
+    if archive:
+        body["archive"] = [archive]
 
     url = f"{BASE_URL}/neuron/select?page={page}&size={size}"
     print(f"[search_neurons] POST {url} body={body}")

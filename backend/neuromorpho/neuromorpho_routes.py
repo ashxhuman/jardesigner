@@ -93,16 +93,18 @@ def search():
     species      = body.get("species") or None
     brain_region = body.get("brain_region") or None
     cell_type    = body.get("cell_type") or None
+    archive      = body.get("archive") or None
     page         = body.get("page", 0)
     size         = body.get("size", 20)
 
-    print(f"[search] species={species!r} brain_region={brain_region!r} cell_type={cell_type!r} page={page} size={size}")
+    print(f"[search] species={species!r} brain_region={brain_region!r} cell_type={cell_type!r} archive={archive!r} page={page} size={size}")
 
     try:
         result = search_neurons(
             species=species,
             brain_region=brain_region,
             cell_type=cell_type,
+            archive=archive,
             page=page,
             size=size,
         )

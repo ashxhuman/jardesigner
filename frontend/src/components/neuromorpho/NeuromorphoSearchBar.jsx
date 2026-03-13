@@ -28,9 +28,10 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
   const [species, setSpecies] = useState('');
   const [brainRegion, setBrainRegion] = useState('');
   const [cellType, setCellType] = useState('');
+  const [archive, setArchive] = useState('');
 
   const [speciesList, setSpeciesList] = useState([]);
-  const [metadataOptions, setMetadataOptions] = useState({ brain_region: [], cell_type: [] });
+  const [metadataOptions, setMetadataOptions] = useState({ brain_region: [], cell_type: [], archive: [] });
   const [metaLoading, setMetaLoading] = useState(false);
 
   // Load species on mount
@@ -44,9 +45,10 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
   // Load brain regions + cell types when species changes
   useEffect(() => {
     if (!species) {
-      setMetadataOptions({ brain_region: [], cell_type: [] });
+      setMetadataOptions({ brain_region: [], cell_type: [], archive: [] });
       setBrainRegion('');
       setCellType('');
+      setArchive('');
       return;
     }
     setMetaLoading(true);
@@ -61,9 +63,11 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
         setMetadataOptions({
           brain_region: d.brain_region || [],
           cell_type: d.cell_type || [],
+          archive: d.archive || [],
         });
         setBrainRegion('');
         setCellType('');
+        setArchive('');
       })
       .catch((e) => {
         console.error('metadata fetch failed:', e.message);
@@ -74,7 +78,7 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSearch({ species, brain_region: brainRegion, cell_type: cellType });
+    onSearch({ species, brain_region: brainRegion, cell_type: cellType, archive });
   };
 
   return (
@@ -130,6 +134,25 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
               <MenuItem value=""><em>Any</em></MenuItem>
               {metadataOptions.cell_type.map((c) => (
                 <MenuItem key={c} value={c}>{c}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
+
+        {/* Archive — only shown after species selected */}
+        {species && (
+          <FormControl sx={{ width: 200 }} variant="outlined">
+            <InputLabel id="nm-archive-label">Archive</InputLabel>
+            <Select
+              labelId="nm-archive-label"
+              value={archive}
+              label="Archive"
+              onChange={(e) => setArchive(e.target.value)}
+              disabled={loading || metaLoading}
+            >
+              <MenuItem value=""><em>Any</em></MenuItem>
+              {metadataOptions.archive.map((a) => (
+                <MenuItem key={a} value={a}>{a}</MenuItem>
               ))}
             </Select>
           </FormControl>
