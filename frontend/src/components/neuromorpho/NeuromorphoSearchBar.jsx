@@ -2,10 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
+  Autocomplete,
+  TextField,
   CircularProgress,
 } from '@mui/material';
 
@@ -17,18 +15,22 @@ function sortSpecies(speciesList) {
   return [...speciesList].sort((a, b) => {
     const aIdx = PRIORITY_SPECIES.indexOf(a.toLowerCase());
     const bIdx = PRIORITY_SPECIES.indexOf(b.toLowerCase());
-    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx; 
-    if (aIdx !== -1) return -1;                          
-    if (bIdx !== -1) return 1;                           
-    return a.localeCompare(b);                           
+    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+    if (aIdx !== -1) return -1;
+    if (bIdx !== -1) return 1;
+    return a.localeCompare(b);
   });
 }
 
+function toTitleCase(str) {
+  return str.toLowerCase().split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
 export default function NeuromorphoSearchBar({ onSearch, loading }) {
-  const [species, setSpecies] = useState('');
-  const [brainRegion, setBrainRegion] = useState('');
-  const [cellType, setCellType] = useState('');
-  const [archive, setArchive] = useState('');
+  const [species, setSpecies] = useState(null);
+  const [brainRegion, setBrainRegion] = useState(null);
+  const [cellType, setCellType] = useState(null);
+  const [archive, setArchive] = useState(null);
 
   const [speciesList, setSpeciesList] = useState([]);
   const [metadataOptions, setMetadataOptions] = useState({ brain_region: [], cell_type: [], archive: [] });
@@ -46,9 +48,9 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
   useEffect(() => {
     if (!species) {
       setMetadataOptions({ brain_region: [], cell_type: [], archive: [] });
-      setBrainRegion('');
-      setCellType('');
-      setArchive('');
+      setBrainRegion(null);
+      setCellType(null);
+      setArchive(null);
       return;
     }
     setMetaLoading(true);
@@ -65,97 +67,94 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
           cell_type: d.cell_type || [],
           archive: d.archive || [],
         });
-        setBrainRegion('');
-        setCellType('');
-        setArchive('');
+        setBrainRegion(null);
+        setCellType(null);
+        setArchive(null);
       })
       .catch((e) => {
         console.error('metadata fetch failed:', e.message);
-        setMetadataOptions({ brain_region: [], cell_type: [] });
+        setMetadataOptions({ brain_region: [], cell_type: [], archive: [] });
       })
       .finally(() => setMetaLoading(false));
   }, [species]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSearch({ species, brain_region: brainRegion, cell_type: cellType, archive });
+    onSearch({ species, brain_region: brainRegion || '', cell_type: cellType || '', archive: archive || '' });
   };
 
   return (
     <form onSubmit={handleSubmit}>
       <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
         {/* Species */}
-        <FormControl sx={{ width: 200 }} variant="outlined">
-          <InputLabel id="nm-species-label">Species</InputLabel>
-          <Select
-            labelId="nm-species-label"
-            value={species}
-            label="Species"
-            onChange={(e) => setSpecies(e.target.value)}
-            disabled={loading}
-          >
-            {speciesList.map((s) => (
-              <MenuItem key={s} value={s}>{s.toLowerCase().split(' ').map(function(word) {return word.charAt(0).toUpperCase() + word.slice(1);}).join(' ')}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <Autocomplete
+          sx={{ width: 300 }}
+          options={speciesList}
+          value={species}
+          onChange={(_, val) => setSpecies(val)}
+          getOptionLabel={(opt) => toTitleCase(opt)}
+          disabled={loading}
+          renderInput={(params) => (
+            <TextField {...params} label="Species" variant="outlined" />
+          )}
+        />
 
         {/* Brain Region — only shown after species selected */}
         {species && (
-          <FormControl sx={{ width: 220 }} variant="outlined">
-            <InputLabel id="nm-region-label">Brain Region</InputLabel>
-            <Select
-              labelId="nm-region-label"
-              value={brainRegion}
-              label="Brain Region"
-              onChange={(e) => setBrainRegion(e.target.value)}
-              disabled={loading || metaLoading}
-              endAdornment={metaLoading ? <CircularProgress size={16} sx={{ mr: 3 }} /> : null}
-            >
-              <MenuItem value=""><em>Any</em></MenuItem>
-              {metadataOptions.brain_region.map((r) => (
-                <MenuItem key={r} value={r}>{r}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Autocomplete
+            sx={{ width: 300 }}
+            options={metadataOptions.brain_region}
+            value={brainRegion}
+            onChange={(_, val) => setBrainRegion(val)}
+            disabled={loading || metaLoading}
+            loading={metaLoading}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Brain Region"
+                variant="outlined"
+                InputProps={{
+                  ...params.InputProps,
+                  endAdornment: (
+                    <>
+                      {metaLoading ? <CircularProgress size={16} sx={{ mr: 1 }} /> : null}
+                      {params.InputProps.endAdornment}
+                    </>
+                  ),
+                }}
+              />
+            )}
+          />
         )}
 
         {/* Cell Type — only shown after species selected */}
         {species && (
-          <FormControl sx={{ width: 200 }} variant="outlined">
-            <InputLabel id="nm-celltype-label">Cell Type</InputLabel>
-            <Select
-              labelId="nm-celltype-label"
-              value={cellType}
-              label="Cell Type"
-              onChange={(e) => setCellType(e.target.value)}
-              disabled={loading || metaLoading}
-            >
-              <MenuItem value=""><em>Any</em></MenuItem>
-              {metadataOptions.cell_type.map((c) => (
-                <MenuItem key={c} value={c}>{c}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Autocomplete
+            sx={{ width: 300 }}
+            options={metadataOptions.cell_type}
+            value={cellType}
+            onChange={(_, val) => setCellType(val)}
+            disabled={loading || metaLoading}
+            loading={metaLoading}
+            renderInput={(params) => (
+              <TextField {...params} label="Cell Type" variant="outlined" />
+            )}
+          />
         )}
 
         {/* Archive — only shown after species selected */}
         {species && (
-          <FormControl sx={{ width: 200 }} variant="outlined">
-            <InputLabel id="nm-archive-label">Archive</InputLabel>
-            <Select
-              labelId="nm-archive-label"
-              value={archive}
-              label="Archive"
-              onChange={(e) => setArchive(e.target.value)}
-              disabled={loading || metaLoading}
-            >
-              <MenuItem value=""><em>Any</em></MenuItem>
-              {metadataOptions.archive.map((a) => (
-                <MenuItem key={a} value={a}>{a}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Autocomplete
+            sx={{ width: 300 }}
+            options={metadataOptions.archive}
+            value={archive}
+            onChange={(_, val) => setArchive(val)}
+            disabled={loading || metaLoading}
+            loading={metaLoading}
+            renderInput={(params) => (
+              <TextField {...params} label="Archive" variant="outlined" />
+            )}
+          />
         )}
 
         <Button type="submit" variant="contained" disabled={loading || !species}>
