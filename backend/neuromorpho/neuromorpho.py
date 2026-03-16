@@ -2,7 +2,17 @@ import requests
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-BASE_URL = "http://cngpro.gmu.edu:8080/api"
+_PRIMARY_URL = "http://cngpro.gmu.edu:8080/api"
+_FALLBACK_URL = "https://neuromorpho.org/api"
+
+def _get_base_url() -> str:
+    try:
+        requests.get(f"{_PRIMARY_URL}/neuron/fields/species", timeout=5)
+        return _PRIMARY_URL
+    except Exception:
+        return _FALLBACK_URL
+
+BASE_URL = _get_base_url()
 USER_AGENT = "www.mooseneuro.org/1.0 (contact: mooseneuro@gmail.com)"
 _HEADERS = {"User-Agent": USER_AGENT}
 
