@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Tabs, Tab, Typography, TextField, Grid, Tooltip, IconButton, Button, Dialog, DialogContent, DialogTitle, Container } from '@mui/material';
+import { Box, Tabs, Tab, Typography, TextField, Grid, Tooltip, IconButton, Button } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import helpText from './MorphoMenuBox.Help.json';
@@ -8,8 +8,7 @@ import somaIcon from '../../assets/soma.png';
 import ballAndStickIcon from '../../assets/ballAndStick.png';
 import yBranchIcon from '../../assets/ybranch.png';
 import { formatFloat } from '../../utils/formatters.js';
-import NeuromorphoApp from '../neuromorpho/NeuromorphoApp.jsx';
-import CloseIcon from '@mui/icons-material/Close';
+import { NeuromorphoDialog } from '../neuromorpho/index.js';
 import NMOLOGO from '../../assets/DataRepository/NMOLOGO.png';
 
 // --- Unit Conversion Helpers ---
@@ -223,46 +222,12 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
                                 Neuromorpho.org
                             </Button>
 
-                            <Dialog
+                            <NeuromorphoDialog
                                 open={open}
                                 onClose={handleClose}
-                                scroll="paper"
-                                fullWidth
-                                maxWidth="lg"
-                                PaperProps={{ sx: { height: '90vh', borderRadius: 2 } }}
-                            >
-                                <DialogTitle sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    borderBottom: '1px solid',
-                                    borderColor: 'divider',
-                                    py: 1.5,
-                                    px: 3,
-                                }}>
-                                    <Typography variant='h6' fontWeight='bold'>
-                                        Neuron Morphology
-                                        <Typography variant='subtitle1' fontWeight='light' color='primary.main'> Browse and import neuron reconstructions from <a href="https://neuromorpho.org" target="_blank" rel="noopener noreferrer"> Neuromorpho.Org </a> </Typography>
-                                    </Typography>
-                                    <IconButton size="small" onClick={handleClose}>
-                                        <CloseIcon fontSize="small" />
-                                    </IconButton>
-                                </DialogTitle>
-
-                                <DialogContent sx={{ p: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                                    <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-                                        <NeuromorphoApp
-                                            clientId={clientId}
-                                            onFileChange={onFileChange}
-                                            onClose={handleClose}
-                                        />
-                                    </Box>
-                                </DialogContent>
-                                <Typography sx={{ display: 'flex', justifyContent: 'center', gap: '6px', padding: 2 }}>
-                                    <span>Data from NeuroMorpho.Org.</span>
-                                    <a href="https://neuromorpho.org/useterm.jsp" target="_blank" rel="noopener noreferrer">Terms of Use</a>
-                                </Typography>
-                            </Dialog>
+                                clientId={clientId}
+                                onFileChange={onFileChange}
+                            />
                         </Box>
 
                         {currentConfig.source && (
