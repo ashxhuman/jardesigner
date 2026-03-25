@@ -1,3 +1,13 @@
+##############################################
+# storage.py — NeuronStorage
+#
+# Local disk operations scoped to one client session.
+#
+# To batch-download multiple SWC files and list them in the frontend:
+#   1. POST /neuromorpho/save-cart  { neuron_ids: [...] }
+#   2. GET  /neuromorpho/neurons
+#   3. Render the response in the frontend
+##############################################
 import json
 import re
 from datetime import datetime

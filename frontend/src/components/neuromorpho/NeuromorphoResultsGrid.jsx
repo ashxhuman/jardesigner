@@ -183,24 +183,18 @@ export default function NeuromorphoResultsGrid({ results, loading, rowCount, pag
       </Box>
 
       {/* Neuron detail dialog */}
-      <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth='sm' fullWidth>
-      <DialogTitle>
-      Neuron Details
-              <IconButton
-        size="small"
-        onClick={() =>
-                  window.open(
-          `https://neuromorpho.org/neuron_info.jsp?neuron_name=${selectedNeuron.neuron_name}`,
-          '_blank'
-        )
-        }
-      >
-      <OpenInNewIcon />
-    </IconButton>
-  </DialogTitle>        
-  <DialogContent>
-        <NeuronDetail neuron={selectedNeuron} />
-
+      <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Neuron Details
+          <IconButton
+            size="small"
+            onClick={() => window.open(`https://neuromorpho.org/neuron_info.jsp?neuron_name=${selectedNeuron.neuron_name}`, '_blank')}
+          >
+            <OpenInNewIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <NeuronDetail neuron={selectedNeuron} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDetailOpen(false)}>Close</Button>

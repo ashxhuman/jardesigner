@@ -1,3 +1,9 @@
+##############################################
+# neuromorpho.py — NeuroMorpho.org API client
+#
+# Handles all outbound HTTP requests to the NeuroMorpho API.
+# Selects primary or fallback base URL on startup.
+##############################################
 import requests
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -11,6 +17,7 @@ def _get_base_url() -> str:
         return _PRIMARY_URL
     except Exception:
         return _FALLBACK_URL
+
 
 BASE_URL = _get_base_url()
 USER_AGENT = "www.mooseneuro.org/1.0 (contact: mooseneuro@gmail.com)"
@@ -66,19 +73,14 @@ def search_neurons(
         body["archive"] = [archive]
 
     url = f"{BASE_URL}/neuron/select?page={page}&size={size}"
-    print(f"[search_neurons] POST {url} body={body}")
     resp = requests.post(url, json=body, headers=_HEADERS, timeout=30)
-    print(f"[search_neurons] status={resp.status_code}")
 
     # NeuroMorpho returns 404 when query has no results — treat as empty, not error
     if resp.status_code == 404:
         return {"_embedded": {"neuronResources": []}, "page": {"totalPages": 0, "number": 0, "totalElements": 0}}
 
     resp.raise_for_status()
-    data = resp.json()
-    neurons = data.get("_embedded", {}).get("neuronResources", [])
-    print(f"[search_neurons] total_elements={data.get('page', {}).get('totalElements')} returned={len(neurons)}")
-    return data
+    return resp.json()
 
 
 def fetch_neuron_metadata(species: str) -> Dict:
@@ -91,14 +93,15 @@ def fetch_neuron_metadata(species: str) -> Dict:
     # Get total page count using the same page size as the loop below.
     # Without size=500 the API returns totalPages based on ~20 items/page,
     # but the loop fetches 500/page — so page counts differ and 404s appear.
-    resp = requests.post(
+    first = requests.post(
         f"{BASE_URL}/neuron/select?page=0&size=500",
         json={"species": [species]},
         headers=_HEADERS,
         timeout=30,
     )
-    resp.raise_for_status()
-    total_pages = resp.json().get("page", {}).get("totalPages", 1)
+    first.raise_for_status()
+    first_data = first.json()
+    total_pages = first_data.get("page", {}).get("totalPages", 1)
 
     brain_regions: set = set()
     cell_types: set = set()
@@ -106,16 +109,20 @@ def fetch_neuron_metadata(species: str) -> Dict:
 
     for page in range(total_pages):
         try:
-            r = requests.post(
-                f"{BASE_URL}/neuron/select?page={page}&size=500",
-                json={"species": [species]},
-                headers=_HEADERS,
-                timeout=40,
-            )
-            if r.status_code == 404:
-                break
-            r.raise_for_status()
-            neurons = r.json().get("_embedded", {}).get("neuronResources", [])
+            if page == 0:
+                data = first_data
+            else:
+                r = requests.post(
+                    f"{BASE_URL}/neuron/select?page={page}&size=500",
+                    json={"species": [species]},
+                    headers=_HEADERS,
+                    timeout=40,
+                )
+                if r.status_code == 404:
+                    break
+                r.raise_for_status()
+                data = r.json()
+            neurons = data.get("_embedded", {}).get("neuronResources", [])
             for n in neurons:
                 _collect(brain_regions, n.get("brain_region"))
                 _collect(cell_types, n.get("cell_type"))
