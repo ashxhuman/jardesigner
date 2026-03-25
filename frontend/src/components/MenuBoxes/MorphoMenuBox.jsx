@@ -8,6 +8,8 @@ import somaIcon from '../../assets/soma.png';
 import ballAndStickIcon from '../../assets/ballAndStick.png';
 import yBranchIcon from '../../assets/ybranch.png';
 import { formatFloat } from '../../utils/formatters.js';
+import { NeuromorphoDialog } from '../neuromorpho/index.js';
+import NMOLOGO from '../../assets/DataRepository/NMOLOGO.png';
 
 // --- Unit Conversion Helpers ---
 const toMeters = (microns) => {
@@ -85,19 +87,19 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
     useEffect(() => { onConfigurationChangeRef.current = onConfigurationChange; }, [onConfigurationChange]);
     const stateRefs = useRef({});
     useEffect(() => {
-      stateRefs.current = { tabIndex, somaValues, ballAndStickValues, yBranchValues };
+        stateRefs.current = { tabIndex, somaValues, ballAndStickValues, yBranchValues };
     }, [tabIndex, somaValues, ballAndStickValues, yBranchValues]);
     const fileInputRef = useRef(null);
 
-    const handleSomaChange = useCallback((field, value) => setSomaValues(prev => ({...prev, [field]: value})), []);
-    const handleBallAndStickChange = useCallback((field, value) => setBallAndStickValues(prev => ({...prev, [field]: value})), []);
-    const handleYBranchChange = useCallback((field, value) => setYBranchValues(prev => ({...prev, [field]: value})), []);
+    const handleSomaChange = useCallback((field, value) => setSomaValues(prev => ({ ...prev, [field]: value })), []);
+    const handleBallAndStickChange = useCallback((field, value) => setBallAndStickValues(prev => ({ ...prev, [field]: value })), []);
+    const handleYBranchChange = useCallback((field, value) => setYBranchValues(prev => ({ ...prev, [field]: value })), []);
     const handleTabChange = (event, newIndex) => setTabIndex(newIndex);
     const handleFileSelect = () => fileInputRef.current.click();
 
     // This function now handles the file upload to the server.
     const handleFileChange = async (event) => {
-		console.log("File selected. Checking required props:", { onFileChange, clientId });
+        console.log("File selected. Checking required props:", { onFileChange, clientId });
 
         const file = event.target.files[0];
         if (!file || !onFileChange || !clientId) return;
@@ -109,7 +111,7 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
 
         try {
             // 2. POST the file to the server's upload endpoint.
-			const uploadUrl = `http://${window.location.hostname}:5000/upload_file`;
+            const uploadUrl = `http://${window.location.hostname}:5000/upload_file`;
 
             const response = await fetch(uploadUrl, {
                 method: 'POST',
@@ -123,7 +125,7 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
 
             // 3. On success, update the main app state with the original filename for portability.
             onFileChange({ filename: file.name });
-            
+
         } catch (error) {
             console.error("Error uploading file:", error);
             alert(`Failed to upload the selected file: ${error.message}`);
@@ -181,6 +183,9 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
             }
         };
     }, []);
+    const [open, setOpen] = React.useState(false);
+    const handleOpen = () => setOpen(true);
+    const handleClose = () => setOpen(false);
 
     return (
         <Box sx={{ p: 2, background: '#f5f5f5', borderRadius: 2 }}>
@@ -199,6 +204,32 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
                             <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={handleFileSelect}>Select Morphology File...</Button>
                             <Tooltip title={helpText.fields.file.source} placement="right"><IconButton size="small"><InfoOutlinedIcon /></IconButton></Tooltip>
                         </Box>
+                        <Box sx={{ mt: 1 }}>
+                            <Button
+                                component='label'
+                                variant="outlined"
+                                size="small"
+                                tabIndex={-1}
+                                startIcon={
+                                    <span style={{ display: 'flex', alignItems: 'center', margin: 2 }}>
+                                        <img src={NMOLOGO} alt="Neuromorpho.org-Logo"
+                                            style={{ width: '30px', height: '25px', marginRight: 8 }}
+                                        />
+                                    </span>
+                                }
+                                onClick={handleOpen}
+                            >
+                                Neuromorpho.org
+                            </Button>
+
+                            <NeuromorphoDialog
+                                open={open}
+                                onClose={handleClose}
+                                clientId={clientId}
+                                onFileChange={onFileChange}
+                            />
+                        </Box>
+
                         {currentConfig.source && (
                             <Typography sx={{ mt: 1, fontStyle: 'italic' }}>
                                 Active File: {currentConfig.source}
