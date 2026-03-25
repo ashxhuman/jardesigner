@@ -95,10 +95,7 @@ export default function NeuromorphoApp({clientId, onFileChange, onClose}) {
       if (!swcResp.ok) throw new Error('Failed to fetch SWC file');
       const swcText = await swcResp.text();
 
-      // Extract filename from Content-Disposition header, fallback to neuron_id
-      const disposition = swcResp.headers.get('Content-Disposition');
-      const match = disposition?.match(/filename=(.+\.swc)/);
-      const filename = match ? match[1] : `${neuronId}.swc`;
+      const filename = `${neuronName}.swc`;
 
       // STEP 2: Upload SWC to server under this client's session dir
       const formData = new FormData();
