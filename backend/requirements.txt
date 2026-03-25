@@ -4,9 +4,9 @@ Flask-SocketIO>=5.6.1
 jsonschema>=4.26.0
 lxml>=6.0.2
 matplotlib>=3.10.8
-pymoose==4.1.4
+pymoose>=4.1.4
 numpy>=2.4.3
 Requests>=2.32.5
 Werkzeug>=3.1.6
-eventlet==0.40.4
+eventlet>=0.40.4
 urllib3>=2.6.3
