@@ -5,8 +5,10 @@ import NeuromorphoResultsGrid from './NeuromorphoResultsGrid';
 //import NeuromorphoCart from "./NeuromorphoCart";
 //import NeuromorphoSavedNeurons from "./NeuromorphoSavedNeurons";
 
-const BASE = 'http://localhost:5000/neuromorpho';
-const SERVER = 'http://localhost:5000';
+import { API_BASE_URL } from '../../config.js';
+
+const BASE = `${API_BASE_URL}/neuromorpho`;
+const SERVER = API_BASE_URL;
 
 // // Stable client ID — persisted in sessionStorage so it survives page refresh
 // // but resets on new browser session (matches server.py's disconnect cleanup)

@@ -8,8 +8,7 @@ import CloseIcon from '@mui/icons-material/Close';
 // Importing logos
 import jardesLogo from '../../assets/jardes_logo.png';
 import mooseLogo from '../../assets/moose_logo.png';
-
-const API_BASE_URL = `http://${window.location.hostname}:5000`;
+import { API_BASE_URL } from '../../config.js';
 
 const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, clientId }) => {
     // --- Metadata State ---

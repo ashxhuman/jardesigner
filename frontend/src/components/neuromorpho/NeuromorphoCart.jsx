@@ -13,7 +13,9 @@ import {
   IconButton,
 } from '@mui/material';
 
-const BASE = 'http://localhost:5000/neuromorpho';
+import { API_BASE_URL } from '../../config.js';
+
+const BASE = `${API_BASE_URL}/neuromorpho`;
 
 export default function NeuromorphoCart({ cart, onCartChange, clientId }) {
   const [saving, setSaving] = useState(false);
