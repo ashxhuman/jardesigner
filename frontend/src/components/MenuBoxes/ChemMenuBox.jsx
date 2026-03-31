@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { API_BASE_URL } from '../../config.js';
 import {
     Box,
     Tabs,
@@ -270,7 +271,7 @@ const ChemMenuBox = ({
         formData.append('clientId', clientId);
 
         try {
-            const uploadUrl = `http://${window.location.hostname}:5000/upload_file`;
+            const uploadUrl = `${API_BASE_URL}/upload_file`;
             const response = await fetch(uploadUrl, {
                 method: 'POST',
                 body: formData,

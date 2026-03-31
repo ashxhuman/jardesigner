@@ -18,7 +18,9 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import FolderIcon from '@mui/icons-material/Folder';
 
-const BASE = 'http://localhost:5000/neuromorpho';
+import { API_BASE_URL } from '../../config.js';
+
+const BASE = `${API_BASE_URL}/neuromorpho`;
 
 export default function NeuromorphoSavedNeurons({ clientId }) {
   const [open, setOpen] = useState(false);
