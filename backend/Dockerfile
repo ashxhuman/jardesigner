@@ -1,15 +1,21 @@
-# syntax=docker/dockerfile:1
 FROM python:3.12-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     gfortran \
+    ninja-build \
+    pkg-config \
+    git \
+    ca-certificates \
     libglib2.0-0 \
     libgl1 \
     libgomp1 \
@@ -28,24 +34,38 @@ RUN apt-get update && apt-get install -y \
     libxslt1-dev \
     libstdc++6 \
     libc6 \
-    pkg-config \
-    git \
+    pybind11-dev \
+    zlib1g-dev \
+    graphviz \
+    libgraphviz-dev \
     && rm -rf /var/lib/apt/lists/*
 
-ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
+COPY backend/requirements.txt /app/backend/requirements.txt
 
-COPY backend/requirements.txt .
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --upgrade pip && \
+    pip install --no-cache-dir -r /app/backend/requirements.txt && \
+    pip install --no-cache-dir meson meson-python python-libsbml pyneuroml
 
-COPY backend/ ./backend/
-COPY launch_jardes.py .
-COPY jardesigner/ ./jardesigner/
+# # Uncomment when building from binary:
+# ARG MOOSE_REPO=https://github.com/mooseneuro/moose-core
+# ARG MOOSE_REF=development
+
+# RUN git clone --depth=50 --branch ${MOOSE_REF} ${MOOSE_REPO} /tmp/moose-core && \
+#     cd /tmp/moose-core && \
+#     pip install pint && \
+#     pip install scipy && \
+#     pip install nanobind && \
+#     meson setup _build -Duse_mpi=false -Dbuildtype=release && \
+#     meson compile -vC _build && \
+#     meson install -C _build && \
+#     rm -rf /tmp/moose-core
+
+COPY backend/ /app/backend/
+COPY launch_jardes.py /app/
+COPY jardesigner/ /app/jardesigner/
 
 RUN mkdir -p /app/logs /app/backend/temp_configs /app/backend/user_uploads && \
     chmod -R 755 /app/logs /app/backend/temp_configs /app/backend/user_uploads
-
-ENV PYTHONPATH=/app
 
 EXPOSE 5000
 
