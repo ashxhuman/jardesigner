@@ -12,6 +12,7 @@ import jardesLogo from '../../assets/jardes_logo.png';
 import mooseLogo from '../../assets/moose_logo.png';
 
 const API_BASE_URL = `http://${window.location.hostname}:5000`;
+const MOOSE_VERSION = '4.2.0 "Kalakand"';
 
 const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, clientId }) => {
     // --- Metadata State ---
@@ -24,8 +25,22 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
     // --- Dialog State ---
     const [showAboutJardesigner, setShowAboutJardesigner] = useState(false);
     const [showAboutMoose, setShowAboutMoose] = useState(false);
+    const [mooseVersion, setMooseVersion] = useState(MOOSE_VERSION);
 
     const fileInputRef = useRef();
+
+    // --- Fetch latest MOOSE version from GitHub when dialog opens ---
+    useEffect(() => {
+        if (!showAboutMoose) return;
+        fetch('https://api.github.com/repos/mooseneuro/moose-core/releases/latest')
+            .then(res => res.ok ? res.json() : Promise.reject())
+            .then(data => {
+                // release name is e.g. '4.2.0 "Kalakand"', tag is e.g. 'v4.2.0'
+                const version = data.name || data.tag_name?.replace(/^v/, '') || MOOSE_VERSION;
+                setMooseVersion(version);
+            })
+            .catch(() => {}); // silently keep the hardcoded fallback
+    }, [showAboutMoose]);
 
     // --- Sync State with Config ---
     useEffect(() => {
@@ -371,8 +386,8 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                     "Licensed under the GNU GPL Version 3.",
                 ]}
                 links={[
-                    { label: 'GitHub Repository', href: 'https://github.com/mooseneuro/jardesigner', icon: 'github' },
-                    { label: 'Documentation', href: 'https://www.mooseneuro.org/docs/user/py/quickstart/qs_GUI.html', icon: 'docs' },
+                    { label: 'Project Code', href: 'https://github.com/mooseneuro/jardesigner', icon: 'github' },
+                    { label: 'Jardesigner Documentation', href: 'https://www.mooseneuro.org/docs/user/py/quickstart/qs_GUI.html', icon: 'docs' },
                 ]}
             />
 
@@ -383,13 +398,13 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                 logo={mooseLogo}
                 content={[
                     "MOOSE is the Multiscale Object-Oriented Simulation Environment for modeling subcellular signaling, single neuron physiology, detailed and abstract neuronal networks.",
-                    "MOOSE version is currently 4.0.0, \"Jalebi\"",
+                    `MOOSE version is currently ${mooseVersion}`,
                     "Copyright (C) U.S. Bhalla, NCBS-TIFR, and CHINTA 2026",
                     "Licensed under the GNU GPL Version 3.",
                 ]}
                 links={[
-                    { label: 'GitHub Repository', href: 'https://github.com/mooseneuro/moose-core', icon: 'github' },
-                    { label: 'Documentation', href: 'https://www.mooseneuro.org/docs/index.html', icon: 'docs' },
+                    { label: 'Project Code', href: 'https://github.com/mooseneuro/moose-core', icon: 'github' },
+                    { label: 'MOOSE Documentation', href: 'https://www.mooseneuro.org/docs/index.html', icon: 'docs' },
                 ]}
             />
 
