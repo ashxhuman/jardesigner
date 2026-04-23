@@ -7,6 +7,9 @@ import zipfile
 
 import requests
 
+# Characters that have syntactic meaning in RMA filter expressions
+_RMA_UNSAFE = re.compile(r"['\[\],]")
+
 _API_BASE         = "http://api.brain-map.org"
 _RMA_URL          = "http://api.brain-map.org/api/v2/data/query.json"
 _DOWNLOAD_URL     = "http://api.brain-map.org/api/v2/well_known_file_download"
@@ -32,6 +35,13 @@ def _rma_query(model: str, criteria: str = "", include: str = "", num_rows: str 
 
 
 # ── Filter / search helpers ───────────────────────────────────────────────────
+
+def _safe_filter_value(value: str) -> str:
+    """Reject strings containing RMA metacharacters to prevent query injection."""
+    if _RMA_UNSAFE.search(value):
+        raise ValueError(f"Invalid filter value: {value!r}")
+    return value
+
 
 def _unique_sorted(rows, key):
     return sorted({r[key] for r in rows if r.get(key)})
@@ -115,29 +125,29 @@ def search_neurons(
     filters = ["[nr__reconstruction_type$nenull]"]
 
     if species:
-        filters.append(f"[donor__species$il'{species}']")
+        filters.append(f"[donor__species$il'{_safe_filter_value(species)}']")
     if sex:
-        filters.append(f"[donor__sex$eq'{sex}']")
+        filters.append(f"[donor__sex$eq'{_safe_filter_value(sex)}']")
     if disease_state:
-        filters.append(f"[donor__disease_state$il'{disease_state}']")
+        filters.append(f"[donor__disease_state$il'{_safe_filter_value(disease_state)}']")
     if brain_area_acronym:
-        filters.append(f"[structure__acronym$eq'{brain_area_acronym}']")
+        filters.append(f"[structure__acronym$eq'{_safe_filter_value(brain_area_acronym)}']")
     if brain_area_parent_acronym:
-        filters.append(f"[structure_parent__acronym$eq'{brain_area_parent_acronym}']")
+        filters.append(f"[structure_parent__acronym$eq'{_safe_filter_value(brain_area_parent_acronym)}']")
     if layer:
-        filters.append(f"[structure__layer$eq'{layer}']")
+        filters.append(f"[structure__layer$eq'{_safe_filter_value(layer)}']")
     if hemisphere:
-        filters.append(f"[specimen__hemisphere$eq'{hemisphere}']")
+        filters.append(f"[specimen__hemisphere$eq'{_safe_filter_value(hemisphere)}']")
     if dendrite_type:
-        filters.append(f"[tag__dendrite_type$eq'{dendrite_type}']")
+        filters.append(f"[tag__dendrite_type$eq'{_safe_filter_value(dendrite_type)}']")
     if apical:
-        filters.append(f"[tag__apical$eq'{apical}']")
+        filters.append(f"[tag__apical$eq'{_safe_filter_value(apical)}']")
     if reconstruction_type:
-        filters.append(f"[nr__reconstruction_type$eq'{reconstruction_type}']")
+        filters.append(f"[nr__reconstruction_type$eq'{_safe_filter_value(reconstruction_type)}']")
     if reporter_status:
-        filters.append(f"[cell_reporter_status$eq'{reporter_status}']")
+        filters.append(f"[cell_reporter_status$eq'{_safe_filter_value(reporter_status)}']")
     if line_name:
-        filters.append(f"[line_name$il'{line_name}']")
+        filters.append(f"[line_name$il'{_safe_filter_value(line_name)}']")
 
     start_row = page * size
     rma = (

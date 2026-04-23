@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import {
   Box,
@@ -52,6 +52,7 @@ function NeuronImagePreview({ neuron }) {
   const [label,   setLabel]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
+  const blobUrlRef = useRef(null);
 
   useEffect(() => {
     if (!neuron) return;
@@ -66,6 +67,13 @@ function NeuronImagePreview({ neuron }) {
     const svgUrl     = `${BASE}/svg/${neuron.specimen__id}`;
     const sectionUrl = `${BASE}/preview/${neuron.specimen__id}`;
 
+    function setImage(blob, lbl) {
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = URL.createObjectURL(blob);
+      setSrc(blobUrlRef.current);
+      setLabel(lbl);
+    }
+
     async function load() {
       // ── Attempt 1: 3D Neuron Reconstruction (morph_thumb_path) ───────
       if (reconUrl) {
@@ -73,11 +81,7 @@ function NeuronImagePreview({ neuron }) {
           const r = await fetch(reconUrl);
           if (r.ok) {
             const blob = await r.blob();
-            if (!cancelled) {
-              setSrc(URL.createObjectURL(blob));
-              setLabel('3D Neuron Reconstruction');
-              return;
-            }
+            if (!cancelled) { setImage(blob, '3D Neuron Reconstruction'); return; }
           }
         } catch (_) { /* fall through */ }
       }
@@ -87,11 +91,7 @@ function NeuronImagePreview({ neuron }) {
         const r = await fetch(svgUrl);
         if (r.ok) {
           const blob = await r.blob();
-          if (!cancelled) {
-            setSrc(URL.createObjectURL(blob));
-            setLabel('Section SVG');
-            return;
-          }
+          if (!cancelled) { setImage(blob, 'Section SVG'); return; }
         }
       } catch (_) { /* fall through */ }
 
@@ -100,11 +100,7 @@ function NeuronImagePreview({ neuron }) {
         const r = await fetch(sectionUrl);
         if (r.ok) {
           const blob = await r.blob();
-          if (!cancelled) {
-            setSrc(URL.createObjectURL(blob));
-            setLabel('Projected Top View');
-            return;
-          }
+          if (!cancelled) { setImage(blob, 'Projected Top View'); return; }
         }
       } catch (_) { /* fall through */ }
 
@@ -115,7 +111,7 @@ function NeuronImagePreview({ neuron }) {
 
     return () => {
       cancelled = true;
-      if (src) URL.revokeObjectURL(src);
+      if (blobUrlRef.current) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
     };
   }, [neuron?.specimen__id]);
 

@@ -55,8 +55,11 @@ def search():
             reporter_status?, line_name?, page?, size? }
     """
     body = request.get_json(force=True, silent=True) or {}
-    size = int(body.get("size", 20))
-    page = int(body.get("page", 0))
+    try:
+        size = max(1, int(body.get("size", 20)))
+        page = max(0, int(body.get("page", 0)))
+    except (TypeError, ValueError):
+        return jsonify({"error": "page and size must be integers"}), 400
 
     try:
         result = search_neurons(
@@ -97,7 +100,7 @@ def get_swc(specimen_id: int):
         swc_text, filename = fetch_swc_for_specimen(specimen_id)
         return swc_text, 200, {
             "Content-Type": "text/plain",
-            "Content-Disposition": f"attachment; filename={filename}",
+            "Content-Disposition": f'attachment; filename="{filename}"',
         }
     except Exception as e:
         traceback.print_exc()
