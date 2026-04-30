@@ -1,4 +1,4 @@
-<div style="text-align: center;">
+<div align="center">
   <img src="frontend/src/assets/jardesigner_logo.png" alt="Jardesigner" width="25%" />
 </div>
 
