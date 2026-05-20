@@ -387,7 +387,7 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                 ]}
                 links={[
                     { label: 'Project Code', href: 'https://github.com/mooseneuro/jardesigner', icon: 'github' },
-                    { label: 'Jardesigner Documentation', href: 'https://www.mooseneuro.org/docs/user/py/quickstart/qs_GUI.html', icon: 'docs' },
+                    { label: 'Jardesigner Documentation', href: 'https://www.mooseneuro.org/docs/html/user/py/quickstart/qs_GUI.html', icon: 'docs' },
                 ]}
             />
 
@@ -404,7 +404,7 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                 ]}
                 links={[
                     { label: 'Project Code', href: 'https://github.com/mooseneuro/moose-core', icon: 'github' },
-                    { label: 'MOOSE Documentation', href: 'https://www.mooseneuro.org/docs/index.html', icon: 'docs' },
+                    { label: 'MOOSE Documentation', href: 'https://www.mooseneuro.org/docs/html/index.html', icon: 'docs' },
                 ]}
             />
 
