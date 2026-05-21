@@ -33,6 +33,10 @@ app.register_blueprint(neuromorpho_routes, url_prefix="/neuromorpho")
 from allenbrain.allenbrain_routes import allenbrain_routes
 app.register_blueprint(allenbrain_routes, url_prefix="/allenbrain")
 
+from icg_database.icg_routes import icg_routes
+app.register_blueprint(icg_routes, url_prefix="/icg")
+
+
 # --- Store running process and session info ---
 running_processes = {}
 client_sim_map = {}

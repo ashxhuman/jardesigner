@@ -21,6 +21,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import helpText from './ElecMenuBox.Help.json';
 import { getCompartmentOptions, OPTION_USER_SPECIFIED } from '../../utils/menuHelpers';
+import { ICGDialog } from '../icg/index.js';
 
 // --- Helper Functions ---
 const getChannelSourceString = (componentType) => {
@@ -45,7 +46,7 @@ const getChannelSourceString = (componentType) => {
 
 const prototypeTypeOptions = [
     'Na_HH', 'Na', 'KDR_HH', 'KDR', 'K_A', 'Ca', 'LCa', 'Ca_conc',
-    'K_AHP', 'K_C', 'gluR', 'NMDAR', 'GABAR', 'leak', 'File'
+    'K_AHP', 'K_C', 'gluR', 'NMDAR', 'GABAR', 'leak', 'File', 'icg'
 ];
 
 const safeToString = (value, defaultValue = '') => {
@@ -93,15 +94,19 @@ const ElecMenuBox = ({
         const initialProtos = currentConfig?.chanProto?.map(p => {
             let componentType = p.source;
             let file = '';
-            if (p.type === 'neuroml') {
+            let source;
+            if (p.type === 'icg') {
+                componentType = 'icg';
+                source = p.source;
+                return { type: componentType, name: p.name, file: '', source, manualName: false }
+            } else if (p.type === 'neuroml') {
                 componentType = 'File';
                 file = p.source || '';
+            } else {
+                const matchingTypeOption = prototypeTypeOptions.find(opt => getChannelSourceString(opt) === p.source || opt === p.source);
+                if (matchingTypeOption) componentType = matchingTypeOption;
             }
-            const matchingTypeOption = prototypeTypeOptions.find(opt => getChannelSourceString(opt) === p.source || opt === p.source);
-            if (matchingTypeOption && p.type !== 'neuroml') {
-                 componentType = matchingTypeOption;
-            }
-            return { type: componentType, name: p.name, file: file, manualName: p.name !== componentType };
+            return { type: componentType, name: p.name, file: file, source, manualName: componentType !== 'icg' && p.name !== componentType };
         }) || [];
         return initialProtos.length > 0 ? initialProtos : [createDefaultPrototype()];
     });
@@ -118,6 +123,31 @@ const ElecMenuBox = ({
 
     const [activePrototype, setActivePrototype] = useState(0);
     const [activeDistribution, setActiveDistribution] = useState(0);
+
+    // --- ICG Channel Library dialog ---
+    const [icgOpen, setIcgOpen] = useState(false);
+    // null = add new prototype; number = update existing prototype at that index
+    const icgEditIndex = useRef(null);
+
+    const openIcgForNew = useCallback((protoIndex) => {
+        icgEditIndex.current = protoIndex;
+        setIcgOpen(true);
+    }, []);
+
+    const handleICGImport = useCallback((entry) => {
+        const name = `${entry.suffix}_${entry.modeldb_id}`;
+        const editIdx = icgEditIndex.current;
+        setPrototypes(prev => {
+            if (editIdx !== null && editIdx < prev.length) {
+                return prev.map((p, i) =>
+                    i === editIdx ? { type: 'icg', name, file: '', manualName: false, source: name } : p
+                );
+            }
+            const updated = [...prev, { type: 'icg', name, file: '', manualName: false, source: name }];
+            setActivePrototype(updated.length - 1);
+            return updated;
+        });
+    }, []);
 
     // --- State for User Specified Path Dialog ---
     const [customPathDialogOpen, setCustomPathDialogOpen] = useState(false);
@@ -263,6 +293,10 @@ const ElecMenuBox = ({
             const currentDistributions = distributionsRef.current;
 
             const chanProtoData = currentPrototypes.map(protoState => {
+                if (protoState.type === 'icg') {
+                    if (!protoState.name || !protoState.source) return null;
+                    return { type: 'icg', source: protoState.source, name: protoState.name };
+                }
                 let schemaType = "builtin";
                 let schemaSource = "";
                 if (protoState.type === 'File') {
@@ -319,39 +353,50 @@ const ElecMenuBox = ({
                     <IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton>
                 </Tooltip>
             </Box>
-            <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                <Tabs value={activePrototype} onChange={(e, nv) => setActivePrototype(nv)} variant="scrollable" scrollButtons="auto" aria-label="Channel Prototypes">
+            <Box sx={{ borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center' }}>
+                <Tabs value={activePrototype} onChange={(e, nv) => setActivePrototype(nv)} variant="scrollable" scrollButtons="auto" aria-label="Channel Prototypes" sx={{ flex: 1 }}>
                     {prototypes.map((p, i) => <Tab key={i} label={p.name || `Proto ${i + 1}`} />)}
                     <IconButton onClick={addPrototype} sx={{ alignSelf: 'center', ml: '10px' }}><AddIcon /></IconButton>
                 </Tabs>
             </Box>
+            <ICGDialog open={icgOpen} onClose={() => setIcgOpen(false)} onChanImport={handleICGImport} />
             {prototypes[activePrototype] && (
                 <Box sx={{ mt: 2, p: 2, border: '1px solid #e0e0e0', borderRadius: '4px' }}>
                     <Grid container spacing={2}>
                         <Grid item xs={12} sm={6}>
-                            <HelpField id="type" label="Type" value={prototypes[activePrototype].type} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.type} select>
-                                {prototypeTypeOptions.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+                            <HelpField id="type" label="Type" value={prototypes[activePrototype].type} onChange={(id,v) => { if (v === 'icg') openIcgForNew(activePrototype); else updatePrototype(activePrototype, id, v); }} helptext={helpText.prototypes.type} select>
+                                {prototypeTypeOptions.map(t => <MenuItem key={t} value={t}>{t === 'icg' ? 'ICG Database' : t}</MenuItem>)}
                             </HelpField>
                         </Grid>
                         <Grid item xs={12} sm={6}>
-                            <HelpField id="name" label="Prototype Name" value={prototypes[activePrototype].name} onChange={(id,v) => setCustomPrototypeName(activePrototype, v)} helptext={helpText.prototypes.name} required />
+                            <HelpField id="name" label="Prototype Name" value={prototypes[activePrototype].name} onChange={(id,v) => setCustomPrototypeName(activePrototype, v)} helptext={helpText.prototypes.name} required disabled={prototypes[activePrototype].type === 'icg'} />
                         </Grid>
                         
+                        {prototypes[activePrototype].type === 'icg' && (
+                            <Grid item xs={12}>
+                                <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                                    <TextField size="small" label="Source" value={prototypes[activePrototype].source ?? ''} InputProps={{ readOnly: true }} sx={{ width: 290 }} />
+                                    <Button variant="outlined" size="small" onClick={() => openIcgForNew(activePrototype)} sx={{ alignSelf: 'center' }}>
+                                        Change...
+                                    </Button>
+                                </Box>
+                            </Grid>
+                        )}
                         {prototypes[activePrototype].type === 'File' && (
                            <Grid item xs={12}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
-                                    <TextField 
-                                        fullWidth 
-                                        size="small" 
-                                        label="Source File (NeuroML)" 
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Source File (NeuroML)"
                                         variant="outlined"
-                                        value={prototypes[activePrototype].file} 
+                                        value={prototypes[activePrototype].file}
                                         InputProps={{ readOnly: true }}
                                         helperText="Click button to select file"
                                     />
-                                    <Button 
-                                        variant="outlined" 
-                                        size="small" 
+                                    <Button
+                                        variant="outlined"
+                                        size="small"
                                         onClick={handleFileSelect}
                                         startIcon={<UploadFileIcon />}
                                         sx={{ flexShrink: 0, height: '40px' }}
