@@ -26,6 +26,7 @@ import math
 import sys
 import time
 import threading
+import queue
 import matplotlib.pyplot as plt
 import argparse
 import requests
@@ -39,6 +40,68 @@ from . import fixXreacs
 from moose.neuroml.NeuroML import NeuroML
 from moose.neuroml.ChannelML import ChannelML
 from . import context
+
+_cmd_queue = queue.Queue()
+_sim_flags = {
+    'stop': False,
+    'pause_pending': False,
+    'reset_pending': False,
+    'last_status_wallclock': 0.0,
+    'data_channel_id': None,
+}
+
+_STATUS_URL   = "http://127.0.0.1:5000/internal/push_data"
+_STATUS_TOKEN = os.environ.get('JARDESIGNER_INTERNAL_TOKEN', '')
+
+def _stdin_reader():
+    for line in sys.stdin:
+        try:
+            command_data = json.loads(line)
+            cmd = command_data.get('command')
+            # Fast-path interrupt only: stop the active MOOSE chunk quickly.
+            # serverCommandLoop remains the single consumer of _cmd_queue
+            # and performs the actual command handling/cleanup.
+            if cmd == 'pause':
+                _sim_flags['pause_pending'] = True
+                moose.stop()
+            elif cmd == 'reset':
+                _sim_flags['stop'] = True
+                _sim_flags['reset_pending'] = True
+                moose.stop()
+            elif cmd in ('stop', 'quit'):
+                moose.stop()
+        except Exception:
+            pass
+
+        _cmd_queue.put(line)
+
+
+def _send_time_update_async(sim_time):
+    channel_id = _sim_flags['data_channel_id']
+    if not channel_id:
+        return
+    def _post():
+        try:
+            requests.post(_STATUS_URL,
+                          json={"data_channel_id": channel_id,
+                                "payload": {"type": "sim_time_update",
+                                            "currentTime": sim_time}},
+                          headers={'X-Internal-Token': _STATUS_TOKEN},
+                          timeout=1.0)
+        except Exception:
+            pass
+    threading.Thread(target=_post, daemon=True).start()
+
+def _pyrun_check():
+    if (_sim_flags.get('stop') or
+            _sim_flags.get('pause_pending') or
+            _sim_flags.get('reset_pending')):
+        moose.stop()
+
+    now = time.time()
+    if now - _sim_flags['last_status_wallclock'] >= 0.5:
+        _sim_flags['last_status_wallclock'] = now
+        _send_time_update_async(moose.element('/clock').currentTime)
 
 knownFieldInfo = {
     'Vm': {'fieldScale': 1000, 'dataUnits': 'mV', 
@@ -304,7 +367,11 @@ class JarDesigner:
         try:
             data = addDefaultsRecursive( data, schema )
             jsonschema.validate(instance=data, schema=schema)
-            applyModifiers( data, modifiers )
+            if len( modifiers ) > 0:
+                applyModifiers( data, modifiers )
+                # Clean up and check all over again.
+                data = addDefaultsRecursive( data, schema )
+                jsonschema.validate(instance=data, schema=schema)
         except jsonschema.exceptions.ValidationError as e:
             print(f"{jsonFile} fails to pass schema: {e}")
             quit()
@@ -425,6 +492,17 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
     ################################################################
     # Some utility functions for building prototypes.
     ################################################################
+
+    def _safe_session_path( self, source ):
+        """Return the resolved path of source within sessionDir, or raise BuildError."""
+        session_real = os.path.realpath( self.sessionDir )
+        resolved = os.path.realpath( os.path.join( self.sessionDir, source ) )
+        if not ( resolved == session_real or resolved.startswith( session_real + os.sep ) ):
+            raise BuildError(
+                "Source file '" + source + "' must be within the session directory."
+            )
+        return resolved
+
     # Return true if it is a function.
     def buildProtoFromFunction( self, func, protoName ):
         if callable( func ):
@@ -439,12 +517,24 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         modPos = func.rfind( "." )
         if ( modPos != -1 ): # Function is in a file, load and check
             resolvedPath = os.path.realpath( func[0:modPos] )
+
+            # Only permit loading from the built-in library dir or session dir.
+            jardes_dir = os.path.dirname(os.path.realpath(__file__))
+            allowed_dirs = [jardes_dir]
+            if hasattr(self, 'sessionDir') and self.sessionDir:
+                allowed_dirs.append(os.path.realpath(self.sessionDir))
+            if not any(resolvedPath == d or resolvedPath.startswith(d + os.sep)
+                       for d in allowed_dirs):
+                raise BuildError(
+                    protoName + ": source file '" + func[0:modPos] +
+                    "' must be within the session or built-in library directory."
+                )
+
             pathTokens = resolvedPath.split('/')
             pathTokens = ['/'] + pathTokens
             modulePath = os.path.realpath(os.path.join(*pathTokens[:-1]))
             moduleName = pathTokens[-1]
             funcName = func[modPos+1:bracePos]
-
 
             moduleFilePath = os.path.join(modulePath, f"{moduleName}.py")
 
@@ -461,6 +551,8 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                 else:
                     print(f"Could not load module: {moduleName}")
                     return False
+            except BuildError:
+                raise
             except Exception as e:
                 print(f"Error loading module {moduleName}: {e}")
                 return False
@@ -554,7 +646,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             elif ptype == 'file':
                 fpath = pp['source']
                 if self.sessionDir != None:
-                    fpath = self.sessionDir + "/" + fpath
+                    fpath = self._safe_session_path( fpath )
                 print( "Server log: Loading cell morpho file: ", fpath )
                 self._loadElec( fpath, 'cell' )
             elif ptype == 'in_memory':
@@ -655,7 +747,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                 elif ctype in ['kkit', 'sbml']:
                     sourceFile = cp['source']
                     if self.sessionDir != None:
-                        sourceFile = self.sessionDir + "/" + sourceFile
+                        sourceFile = self._safe_session_path( sourceFile )
                     self._loadChem( sourceFile, cp['name'] )
                     #self.chemid = moose.element( '/library/' + cp['name'] )
                 #elif ctype == 'in_memory':
@@ -2171,80 +2263,153 @@ _simulation_thread = None
 _is_paused = False
 _remaining_runtime = 0
 _target_simtime = 0
+_SIM_CHUNK_DT = 1.0
+
+def _clear_sim_control_flags():
+    _sim_flags['stop'] = False
+    _sim_flags['pause_pending'] = False
+    _sim_flags['reset_pending'] = False
 
 def _run_simulation(rdes, runtime):
-    """Run MOOSE simulation in background thread."""
+    """Run MOOSE simulation in interruptible chunks."""
     global _remaining_runtime, _target_simtime, _is_paused
-    
-    start_simtime = moose.element("/clock").currentTime
+
+    runtime = max(0.0, float(runtime))
+    start_simtime = moose.element('/clock').currentTime
     _target_simtime = start_simtime + runtime
-    
-    moose.start(runtime)
-    
-    current_simtime = moose.element("/clock").currentTime
-    _remaining_runtime = max(0, _target_simtime - current_simtime)
-    
-    if _remaining_runtime <= 1e-9 and not _is_paused:
+
+    _sim_flags['last_status_wallclock'] = 0.0
+    _sim_flags['data_channel_id'] = rdes.dataChannelId
+
+    while True:
+        current_simtime = moose.element('/clock').currentTime
+        _remaining_runtime = max(0.0, _target_simtime - current_simtime)
+
+        if (_sim_flags['pause_pending'] or
+                _sim_flags['reset_pending'] or
+                _sim_flags['stop'] or
+                _is_paused or
+                _remaining_runtime <= 1e-9):
+            break
+
+        moose.start(min(_SIM_CHUNK_DT, _remaining_runtime))
+
+    current_simtime = moose.element('/clock').currentTime
+    _remaining_runtime = max(0.0, _target_simtime - current_simtime)
+
+    stopped = _sim_flags['stop']
+    pause_pending = _sim_flags['pause_pending'] or _is_paused
+    reset_pending = _sim_flags['reset_pending']
+
+    if reset_pending:
+        moose.reinit()
+        _remaining_runtime = 0
+        _clear_sim_control_flags()
+        return
+
+    if pause_pending:
+        _sim_flags['stop'] = False
+        _sim_flags['pause_pending'] = False
+        return
+
+    _clear_sim_control_flags()
+
+    if _remaining_runtime <= 1e-9 and not stopped:
+        time.sleep(0.05)
+        if (_sim_flags['pause_pending'] or
+                _sim_flags['reset_pending'] or
+                _sim_flags['stop'] or
+                _is_paused):
+            return
+
         rdes.display()
         time.sleep(0.1)
         rdes.runMooView.notifySimulationEnd(rdes.dataChannelId)
 
-def serverCommandLoop( rdes ):
-    global _simulation_thread, _is_paused, _remaining_runtime
-    
-    # This loop will wait for commands from server.py via stdin
-    for line in sys.stdin:
+
+def _start_simulation_thread(rdes, runtime):
+    global _simulation_thread
+
+    if _simulation_thread and _simulation_thread.is_alive():
+        return False
+
+    _simulation_thread = threading.Thread(
+        target=_run_simulation,
+        args=(rdes, runtime),
+        daemon=True
+    )
+    _simulation_thread.start()
+    return True
+
+def serverCommandLoop(rdes):
+    global _simulation_thread, _is_paused, _remaining_runtime, _target_simtime
+
+    reader_thread = threading.Thread(target=_stdin_reader, daemon=True)
+    reader_thread.start()
+
+    while True:
         try:
-            # Parse the command, which is expected to be a JSON string
+            line = _cmd_queue.get()
             command_data = json.loads(line)
-            command = command_data.get("command")
+            command = command_data.get('command')
 
-            if command == "start":
-                runtime = command_data.get("params", {}).get("runtime", rdes.runtime)
-                if moose.element("/clock").currentTime == 0:
+            if command == 'start':
+                runtime = command_data.get('params', {}).get('runtime', rdes.runtime)
+                runtime = float(runtime)
+                if moose.element('/clock').currentTime == 0:
                     if hasattr(rdes, 'moogli') and len(rdes.moogli) > 0:
-                        rdes.runMooView.sendSceneGraph("run")
+                        rdes.runMooView.sendSceneGraph('run')
 
+                _clear_sim_control_flags()
                 _is_paused = False
                 _remaining_runtime = runtime
+                _start_simulation_thread(rdes, runtime)
 
-                _simulation_thread = threading.Thread(
-                    target=_run_simulation,
-                    args=(rdes, runtime),
-                    daemon=True
-                )
-                _simulation_thread.start()
-
-            elif command == "pause":
+            elif command == 'pause':
                 if _simulation_thread and _simulation_thread.is_alive():
                     _is_paused = True
+                    _sim_flags['pause_pending'] = True
                     moose.stop()
-                    _simulation_thread.join(timeout=2.0)
-                    print(f"Paused at t={moose.element('/clock').currentTime:.4f}s", flush=True)
+                    _simulation_thread.join(timeout=5.0)
 
-            elif command == "resume":
+                    current_time = moose.element('/clock').currentTime
+                    _remaining_runtime = max(0.0, _target_simtime - current_time)
+                    _sim_flags['stop'] = False
+                    _sim_flags['pause_pending'] = False
+                    print(f'Paused at t={current_time:.4f}s', flush=True)
+
+            elif command == 'resume':
                 if _is_paused and _remaining_runtime > 1e-9:
+                    _clear_sim_control_flags()
                     _is_paused = False
-                    _simulation_thread = threading.Thread(
-                        target=_run_simulation,
-                        args=(rdes, _remaining_runtime),
-                        daemon=True
-                    )
-                    _simulation_thread.start()
-                    print("Simulation resumed", flush=True)
+                    _start_simulation_thread(rdes, _remaining_runtime)
+                    print('Simulation resumed', flush=True)
 
-            elif command == "reset":
+            elif command == 'stop':
                 if _simulation_thread and _simulation_thread.is_alive():
+                    _sim_flags['stop'] = True
+                    _is_paused = False
+                    _remaining_runtime = 0
                     moose.stop()
                     _simulation_thread.join(timeout=2.0)
+
+            elif command == 'reset':
+                _sim_flags['reset_pending'] = True
+                _sim_flags['stop'] = True
                 _is_paused = False
                 _remaining_runtime = 0
-                moose.reinit()
-
-            elif command == "quit":
+                moose.stop()
                 if _simulation_thread and _simulation_thread.is_alive():
-                    moose.stop()
-                    _simulation_thread.join(timeout=2.0)
+                    _simulation_thread.join(timeout=5.0)
+                moose.reinit()
+                _clear_sim_control_flags()
+
+            elif command == 'quit':
+                _sim_flags['stop'] = True
+                _is_paused = False
+                moose.stop()
+                if _simulation_thread and _simulation_thread.is_alive():
+                    _simulation_thread.join(timeout=5.0)
                 print("Received 'quit' command. Exiting.")
                 break
 
@@ -2287,7 +2452,13 @@ def main():
             #rdes._buildReactionGraph()
             rdes.setupMooView.sendSceneGraph( "setup", meshMols=rdes.meshMols, reacGraph = reacGraph )
             #print( "jardesigner.py: sent SceneGraph1 with meshMols:", rdes.meshMols )
-    
+            import __main__
+            __main__._pyrun_check = _pyrun_check
+            ctrl = moose.PyRun('/jardes_ctrl')
+            ctrl.runString = '_pyrun_check()'
+            ctrl.tick = 19
+            moose.setClock(19, 0.1)
+
         moose.reinit()
         if args.run and args.data_channel_id == None: # local run
             #print( "Running locally")
