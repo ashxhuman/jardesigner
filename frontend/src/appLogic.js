@@ -97,7 +97,6 @@ export const useAppLogic = () => {
     const [plotError, setPlotError] = useState('');
     const [simError, setSimError] = useState(null);
     const [isSimulating, setIsSimulating] = useState(false);
-    const [isPaused, setIsPaused] = useState(false);  // Pause state
     const [clientId] = useState(() => uuidv4());
     const sessionTokenRef = useRef('');
 
@@ -237,7 +236,6 @@ export const useAppLogic = () => {
 
         const onSimulationEnded = () => {
             setIsSimulating(false);
-            setIsPaused(false);  // Reset pause state when simulation ends
             frameQueueRef.current = [];
             const currentFilename = activeSimRef.current.plot_filename;
             if (currentFilename) {
@@ -419,28 +417,12 @@ export const useAppLogic = () => {
             handleRewindReplay();
         } else { frameQueueRef.current = []; }
         setIsSimulating(true);
-        setIsPaused(false);
         const rt = (runtimeOverride !== undefined && runtimeOverride !== null) ? runtimeOverride : jsonData.runtime;
         socketRef.current.emit('sim_command', { command: 'start', pid: activeSim.pid, params: { runtime: rt } });
     }, [activeSim.pid, jsonData.runtime, simulationFrames, handleRewindReplay]);
 
-    const handlePauseRun = useCallback(() => {
-        if (!activeSim.pid || !socketRef.current?.connected) return;
-        socketRef.current.emit('sim_command', { command: 'pause', pid: activeSim.pid });
-        setIsSimulating(false);
-        setIsPaused(true);
-    }, [activeSim.pid]);
-
-    const handleResumeRun = useCallback(() => {
-        if (!activeSim.pid || !socketRef.current?.connected) return;
-        socketRef.current.emit('sim_command', { command: 'resume', pid: activeSim.pid });
-        setIsSimulating(true);
-        setIsPaused(false);
-    }, [activeSim.pid]);
-
     const handleResetRun = useCallback(() => {
         setIsSimulating(false);
-        setIsPaused(false);
         // Only clear the run view — keep the setup view (morphology/3D) intact.
         setSimulationFrames(prev => ({ ...prev, [VIEW_IDS.RUN]: [] }));
         setThreeDConfigs(prev => ({ ...prev, [VIEW_IDS.RUN]: null }));
@@ -516,8 +498,8 @@ export const useAppLogic = () => {
 
     const baseProps = {
         activeMenu, toggleMenu, jsonData, jsonContent,
-        plotDataUrl, isPlotReady, plotError, isSimulating, isPaused, activeSim, clientId,
-        updateJsonData, setRunParameters, handleStartRun, handlePauseRun, handleResumeRun, handleResetRun,
+        plotDataUrl, isPlotReady, plotError, isSimulating, activeSim, clientId,
+        updateJsonData, setRunParameters, handleStartRun, handleResetRun,
         handleBuildAndStartRun, handleStopRun, updateJsonString,
         handleClearModel, getCurrentJsonData, getChemProtos, setActiveMenu, handleMorphologyFileChange,
         replayTime, totalRuntime, isReplaying, replayInterval,

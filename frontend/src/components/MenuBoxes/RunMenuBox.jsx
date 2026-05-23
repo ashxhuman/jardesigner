@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Typography, TextField, Grid, Button, CircularProgress, Alert, Divider, Checkbox, FormControlLabel, Tooltip } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -52,13 +51,10 @@ const RunMenuBox = ({
     setRunParameters,
     currentConfig,
     onStartRun,
-    onPauseRun,       // Pause handler
-    onResumeRun,      // Resume handler
     onResetRun,
     onBuildAndStartRun,
     onStopRun,
     isSimulating,
-    isPaused,         // Pause state
     activeSimPid,
     liveFrameData,
     isReplaying,
@@ -92,11 +88,9 @@ const RunMenuBox = ({
 
     const startButtonText = isSimulating
         ? 'Running...'
-        : isPaused
+        : currentTime > 0
             ? 'Continue'
-            : currentTime > 0
-                ? 'Continue'
-                : 'Start';
+            : 'Start';
 
     const onConfigurationChangeRef = useRef(onConfigurationChange);
     useEffect(() => { onConfigurationChangeRef.current = onConfigurationChange; }, [onConfigurationChange]);
@@ -104,8 +98,6 @@ const RunMenuBox = ({
     useEffect(() => {
         if (isReplaying) {
             setStatusMessage({ type: 'info', text: 'Replaying simulation in 3D viewer...' });
-        } else if (isPaused) {
-            setStatusMessage({ type: 'warning', text: `Simulation paused. Click Continue to resume.` });
         } else if (isSimulating) {
             setStatusMessage({ type: 'info', text: `Simulation running (PID: ${activeSimPid})...` });
         } else if (activeSimPid) {
@@ -113,7 +105,7 @@ const RunMenuBox = ({
         } else {
             setStatusMessage({ type: 'info', text: 'No active simulation. Change a setting to build the model.' });
         }
-    }, [isSimulating, isReplaying, isPaused, activeSimPid, currentTime]);
+    }, [isSimulating, isReplaying, activeSimPid, currentTime]);
 
 	useEffect(() => {
     	const frameForRunView = liveFrameData?.run;
@@ -172,12 +164,6 @@ const RunMenuBox = ({
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleStart = () => {
-        // If paused, resume instead of starting fresh
-        if (isPaused && onResumeRun) {
-            onResumeRun();
-            return;
-        }
-
         const latestConfig = buildConfigPayload();
         if (currentTime === 0) {
             // New start: delegate to parent which decides if rebuild is needed.
