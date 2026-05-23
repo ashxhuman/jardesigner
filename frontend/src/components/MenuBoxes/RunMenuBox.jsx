@@ -3,6 +3,7 @@ import { Box, Typography, TextField, Grid, Button, CircularProgress, Alert, Divi
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
 const helpText = {
@@ -48,12 +49,14 @@ const InfoTooltip = ({ title }) => (
 
 const RunMenuBox = ({
     onConfigurationChange,
-    setRunParameters, // Receive the lightweight updater function
+    setRunParameters,
     currentConfig,
     onStartRun,
     onPauseRun,       // Pause handler
     onResumeRun,      // Resume handler
     onResetRun,
+    onBuildAndStartRun,
+    onStopRun,
     isSimulating,
     isPaused,         // Pause state
     activeSimPid,
@@ -87,19 +90,13 @@ const RunMenuBox = ({
     const [currentTime, setCurrentTime] = useState(0.0);
     const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
 
-    // Compute button text based on state
-    const startButtonText = isSimulating 
-        ? 'Running...' 
-        : isPaused 
-            ? 'Continue' 
-            : currentTime > 0 
-                ? 'Continue' 
+    const startButtonText = isSimulating
+        ? 'Running...'
+        : isPaused
+            ? 'Continue'
+            : currentTime > 0
+                ? 'Continue'
                 : 'Start';
-
-    // Compute button states
-    const canStart = !isSimulating && !isPaused && activeSimPid;
-    const canPause = isSimulating && !isPaused;
-    const canResume = isPaused;
 
     const onConfigurationChangeRef = useRef(onConfigurationChange);
     useEffect(() => { onConfigurationChangeRef.current = onConfigurationChange; }, [onConfigurationChange]);
@@ -182,30 +179,25 @@ const RunMenuBox = ({
         }
 
         const latestConfig = buildConfigPayload();
-        
-        // For a "Start", trigger the full check-and-rebuild logic.
         if (currentTime === 0) {
-            if (onConfigurationChange) {
-                onConfigurationChange(latestConfig);
+            // New start: delegate to parent which decides if rebuild is needed.
+            if (onBuildAndStartRun) {
+                onBuildAndStartRun(latestConfig);
             }
-        } 
-        // For a "Continue", just update the params in the parent state without a rebuild.
-        else {
+        } else {
+            // Continue: update params without rebuild, then start with explicit runtime.
             if (setRunParameters) {
                 setRunParameters(latestConfig);
             }
-        }
-
-        // In both cases, start the run.
-        if (onStartRun) {
-            onStartRun();
+            if (onStartRun) {
+                onStartRun(latestConfig.runtime);
+            }
         }
     };
 
-    // Pause handler
-    const handlePause = () => {
-        if (onPauseRun) {
-            onPauseRun();
+    const handleStop = () => {
+        if (onStopRun) {
+            onStopRun();
         }
     };
 
@@ -219,51 +211,9 @@ const RunMenuBox = ({
     return (
         <Box sx={{ p: 2, background: '#f5f5f5', borderRadius: 2 }}>
             <Grid container spacing={1} sx={{ mb: 2 }}>
-                <Grid item xs={4}>
-                    <Button 
-                        variant="contained" 
-                        fullWidth 
-                        startIcon={isSimulating ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />} 
-                        sx={{ 
-                            bgcolor: isPaused ? '#ff9800' : 'success.main',  // Orange when paused
-                            '&:hover': { bgcolor: isPaused ? '#f57c00' : 'success.dark' },
-                            '&.Mui-disabled': { bgcolor: 'grey.400', color: 'grey.100' }
-                        }} 
-                        onClick={handleStart} 
-                        disabled={isSimulating || (!canStart && !canResume)}  // Enable when can resume
-                    >
-                        {startButtonText}
-                    </Button>
-                </Grid>
-                <Grid item xs={4}>
-                    <Button 
-                        variant="contained" 
-                        fullWidth 
-                        startIcon={<PauseIcon />} 
-                        sx={{ 
-                            bgcolor: '#ffeb3b', 
-                            color: 'rgba(0, 0, 0, 0.87)', 
-                            '&:hover': { bgcolor: '#fdd835' },
-                            '&.Mui-disabled': { bgcolor: 'grey.300', color: 'rgba(0, 0, 0, 0.26)' }
-                        }} 
-                        onClick={handlePause} 
-                        disabled={!canPause}  // Only enable when simulation is running
-                    >
-                        Pause
-                    </Button>
-                </Grid>
-                <Grid item xs={4}>
-                    <Button 
-                        variant="contained" 
-                        fullWidth 
-                        startIcon={<StopIcon />} 
-                        sx={{ bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' } }} 
-                        onClick={handleReset} 
-                        disabled={!activeSimPid}
-                    >
-                        Reset
-                    </Button>
-                </Grid>
+                <Grid item xs={4}><Button variant="contained" fullWidth startIcon={isSimulating ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />} sx={{ bgcolor: 'success.main', '&:hover': { bgcolor: 'success.dark' } }} onClick={handleStart} disabled={isSimulating || !activeSimPid}>{startButtonText}</Button></Grid>
+                <Grid item xs={4}><Button variant="contained" fullWidth startIcon={<StopIcon />} sx={{ bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' } }} onClick={handleStop} disabled={!isSimulating}>Stop</Button></Grid>
+                <Grid item xs={4}><Button variant="contained" fullWidth startIcon={<RestartAltIcon />} sx={{ bgcolor: '#ffeb3b', color: 'rgba(0, 0, 0, 0.87)', '&:hover': { bgcolor: '#fdd835' } }} onClick={handleReset} disabled={!activeSimPid}>Reset</Button></Grid>
             </Grid>
 
             {statusMessage.text && <Alert severity={statusMessage.type || 'info'} sx={{ mb: 2, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{statusMessage.text}</Alert>}
