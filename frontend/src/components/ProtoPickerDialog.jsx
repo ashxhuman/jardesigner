@@ -318,14 +318,14 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
             fullWidth
             PaperProps={{ sx: { height: '80vh', display: 'flex', flexDirection: 'column' } }}
         >
-            <DialogTitle sx={{ pb: 1, pr: 6 }}>
+            <DialogTitle sx={{ pb: 1, pr: 6, flexShrink: 0 }}>
                 {title}
                 <IconButton onClick={onClose} sx={{ position: 'absolute', right: 8, top: 8 }}>
                     <CloseIcon />
                 </IconButton>
             </DialogTitle>
 
-            <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1 }}>
+            <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
                 <input
                     type="file"
                     ref={uploadInputRef}
@@ -371,9 +371,9 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                 </Box>
 
                 {/* Table + Detail panel */}
-                <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+                <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                     {/* Table */}
-                    <Box sx={{ flex: detailItem ? '0 0 58%' : '1 1 100%', overflow: 'auto', transition: 'flex 0.15s' }}>
+                    <Box sx={{ flex: detailItem ? '0 0 58%' : '1 1 100%', overflow: 'auto', minHeight: 0, transition: 'flex-basis 0.15s' }}>
                         {(loading || staging || uploading) ? (
                             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 6 }}>
                                 <CircularProgress />
@@ -440,9 +440,9 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
 
                     {/* Detail panel */}
                     {detailItem && (
-                        <Box sx={{ flex: '0 0 42%', borderLeft: '1px solid #e0e0e0', overflow: 'auto', p: 2 }}>
+                        <Box sx={{ flex: 1, borderLeft: '1px solid #e0e0e0', overflow: 'auto', minHeight: 0, p: 2 }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
-                                <Typography variant="h6" sx={{ wordBreak: 'break-word', lineHeight: 1.3 }}>
+                                <Typography variant="h6" sx={{ wordBreak: 'break-word', lineHeight: 1.3, flex: 1, minWidth: 0 }}>
                                     {detailItem.name}
                                 </Typography>
                                 <IconButton size="small" onClick={() => { setDetailItem(null); setDetailData(null); }} sx={{ ml: 1, flexShrink: 0 }}>
