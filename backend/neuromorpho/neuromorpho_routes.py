@@ -1,23 +1,19 @@
 ##############################################
 # neuromorpho_routes.py — Flask routes for NeuroMorpho.org
-#
-# Exposes search, metadata, SWC fetch, and session storage endpoints.
-# CORS is handled globally in server.py — no per-route decorators needed.
 ##############################################
 import json
 import traceback
 from pathlib import Path
 
-from flask import Blueprint, abort, jsonify, request
+from flask import Blueprint, jsonify, request
 
 from .neuromorpho import (
     fetch_species,
     fetch_neuron_metadata,
+    fetch_neuron_by_id,
     fetch_swc_direct,
-    fetch_swc_files,
     search_neurons,
 )
-from .storage import NeuronStorage
 
 neuromorpho_routes = Blueprint("neuromorpho", __name__)
 
@@ -25,18 +21,7 @@ neuromorpho_routes = Blueprint("neuromorpho", __name__)
 _CACHE_DIR = Path("data") / "neuromorpho"
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-USER_UPLOADS_DIR = Path("user_uploads")
-
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-def _get_storage() -> NeuronStorage:
-    client_id = request.headers.get("X-Client-ID")
-    if not client_id:
-        abort(400, "X-Client-ID header is required")
-    return NeuronStorage(USER_UPLOADS_DIR / client_id)
+USER_UPLOADS_DIR = Path(__file__).resolve().parent.parent / "user_uploads"
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +54,7 @@ def get_metadata():
         try:
             return jsonify(json.loads(cache_file.read_text()))
         except Exception:
-            cache_file.unlink(missing_ok=True)  # corrupt cache — rebuild
+            cache_file.unlink(missing_ok=True)
 
     try:
         result = fetch_neuron_metadata(species)
@@ -84,19 +69,16 @@ def get_metadata():
 def search():
     """
     POST /neuromorpho/search
-    Body: { species, brain_region, cell_type, page }
+    Body: { species, brain_region, cell_type, archive, page, size }
     """
     body = request.get_json(force=True, silent=True) or {}
 
-    # Treat empty string the same as None — don't send blank filter to Solr
     species      = body.get("species") or None
     brain_region = body.get("brain_region") or None
     cell_type    = body.get("cell_type") or None
     archive      = body.get("archive") or None
     page         = body.get("page", 0)
     size         = body.get("size", 20)
-
-    print(f"[search] species={species!r} brain_region={brain_region!r} cell_type={cell_type!r} archive={archive!r} page={page} size={size}")
 
     try:
         result = search_neurons(
@@ -126,99 +108,25 @@ def search():
     })
 
 
-@neuromorpho_routes.route("/save-cart", methods=["POST"])
-def save_cart():
-    """
-    POST /neuromorpho/save-cart
-    Header: X-Client-ID: <id>
-    Body: { neuron_ids: [1234, 5678, ...] }
+def stage_neuron(neuron_id: int, client_id: str) -> dict:
+    """Download SWC for neuron_id and save to the user's session directory.
+    Returns {"filename": "<name>.swc"}. Raises on failure."""
+    rec = fetch_neuron_by_id(neuron_id)
+    archive = rec.get("archive", "")
+    name = rec.get("neuron_name", "")
+    if not archive or not name:
+        raise ValueError(f"Missing archive or neuron_name for neuron {neuron_id}")
 
-    NOTE: Can be used to download multiple SWC files at once into the
-    client's session directory, instead of fetching them one by one via /swc/<id>.
-    """
-    storage = _get_storage()
-    body = request.get_json(force=True, silent=True) or {}
-    neuron_ids = body.get("neuron_ids", [])
+    successes, failures = fetch_swc_direct(archive, name, neuron_id)
+    if not successes:
+        raise RuntimeError(f"SWC download failed: {failures}")
 
-    if not neuron_ids:
-        return jsonify({"error": "neuron_ids is required"}), 400
-
-    try:
-        successes, failures = fetch_swc_files(neuron_ids)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    stored = []
-    for neuron in successes:
-        try:
-            meta = storage.save_neuron(
-                neuron_id=neuron.neuron_id,
-                neuron_name=neuron.neuron_name,
-                swc_content=neuron.swc_content,
-                api_data=neuron.api_data,
-                archive=neuron.archive_name,
-            )
-            stored.append(meta["file_path"])
-        except Exception as e:
-            failures.append({"neuron_id": neuron.neuron_id, "error": f"storage: {e}"})
-
-    return jsonify({
-        "success": len(stored) > 0,
-        "total_requested": len(neuron_ids),
-        "total_saved": len(stored),
-        "total_failed": len(failures),
-        "stored_files": stored,
-        "failed": failures,
-    })
-
-
-@neuromorpho_routes.route("/neurons", methods=["GET"])
-def list_neurons():
-    """GET /neuromorpho/neurons  — list all saved neurons for the session."""
-    storage = _get_storage()
-    neurons = storage.list_neurons()
-    return jsonify({"neuron_count": len(neurons), "neurons": neurons})
-
-
-@neuromorpho_routes.route("/neurons/<int:neuron_id>", methods=["DELETE"])
-def delete_neuron(neuron_id: int):
-    """DELETE /neuromorpho/neurons/<id>"""
-    storage = _get_storage()
-    if storage.delete_neuron(neuron_id):
-        return jsonify({"deleted": neuron_id})
-    return jsonify({"error": f"Neuron {neuron_id} not found"}), 404
-
-
-@neuromorpho_routes.route("/storage-info", methods=["GET"])
-def storage_info():
-    """GET /neuromorpho/storage-info  — disk usage for the session."""
-    storage = _get_storage()
-    return jsonify(storage.disk_usage())
-
-
-@neuromorpho_routes.route("/swc/<int:neuron_id>", methods=["GET"])
-def get_swc(neuron_id: int):
-    """Fetch single SWC file. If name+archive are provided as query params,
-    skips the metadata lookup round-trip for faster response."""
-    name = request.args.get("name")
-    archive = request.args.get("archive")
-
-    try:
-        if name and archive:
-            successes, failures = fetch_swc_direct(archive, name, neuron_id)
-        else:
-            successes, failures = fetch_swc_files([neuron_id])
-
-        if not successes:
-            return jsonify({"error": f"Could not fetch SWC for neuron {neuron_id}", "details": failures}), 404
-
-        neuron = successes[0]
-        return neuron.swc_content, 200, {
-            "Content-Type": "text/plain",
-            "Content-Disposition": f"attachment; filename={neuron.neuron_name}.swc"
-        }
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    swc = successes[0]
+    filename = f"{swc.neuron_name}.swc"
+    dest_dir = USER_UPLOADS_DIR / client_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    (dest_dir / filename).write_text(swc.swc_content, encoding="utf-8")
+    return {"filename": filename}
 
 
 @neuromorpho_routes.route("/health", methods=["GET"])

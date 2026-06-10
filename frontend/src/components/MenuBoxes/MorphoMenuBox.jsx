@@ -9,10 +9,6 @@ import somaIcon from '../../assets/soma.svg';
 import ballAndStickIcon from '../../assets/ballAndStick.svg';
 import yBranchIcon from '../../assets/ybranch.svg';
 import { formatFloat } from '../../utils/formatters.js';
-import { NeuromorphoDialog } from '../neuromorpho/index.js';
-import { AllenBrainDialog } from '../allenbrain/index.js';
-import NMOLOGO from '../../assets/DataRepository/NMOLOGO.png';
-import ABCLOGO from '../../assets/DataRepository/abc_logo.png';
 
 // --- Unit Conversion Helpers ---
 const toMeters = (microns) => {
