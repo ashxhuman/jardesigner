@@ -33,10 +33,12 @@ CORS(app)
 # Quiet logging
 socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
 
-from neuromorpho.neuromorpho_routes import neuromorpho_routes
+from neuromorpho.neuromorpho_routes import neuromorpho_routes, stage_neuron as _nm_stage
+from neuromorpho.neuromorpho import search_neurons, fetch_neuron_by_id as _nm_fetch_by_id, neuron_to_item as _nm_to_item
 app.register_blueprint(neuromorpho_routes, url_prefix="/neuromorpho")
 
-from allenbrain.allenbrain_routes import allenbrain_routes
+from allenbrain.allenbrain_routes import allenbrain_routes, stage_specimen as _ab_stage
+from allenbrain.allenbrain import fetch_specimen_by_id as _ab_fetch_by_id, specimen_to_details as _ab_to_details
 app.register_blueprint(allenbrain_routes, url_prefix="/allenbrain")
 
 # --- Store running process and session info ---
@@ -217,6 +219,23 @@ def handle_sim_command(data):
 PROTO_REGISTRY_DIR = os.path.join(BASE_DIR, 'proto_registry')
 _ALLOWED_STAGING_DIRS = {'CELL_MODELS', 'CHEM_MODELS', 'CHAN_MODELS'}
 
+
+_NM_ITEM_CACHE = os.path.join(BASE_DIR, 'data', 'neuromorpho', 'item_cache.json')
+
+def _nm_cache_load():
+    if os.path.exists(_NM_ITEM_CACHE):
+        try:
+            return json.loads(open(_NM_ITEM_CACHE).read())
+        except Exception:
+            return {}
+    return {}
+
+def _nm_cache_save(cache):
+    os.makedirs(os.path.dirname(_NM_ITEM_CACHE), exist_ok=True)
+    with open(_NM_ITEM_CACHE, 'w') as f:
+        json.dump(cache, f, indent=2)
+
+
 def _load_registry(proto_type):
     path = os.path.join(PROTO_REGISTRY_DIR, f'{proto_type}_protos.json')
     if not os.path.exists(path):
@@ -235,6 +254,26 @@ def get_proto_digest(proto_type):
 
 @app.route('/proto_detail/<proto_id>', methods=['GET'])
 def get_proto_detail(proto_id):
+    if proto_id.startswith('nm_'):
+        cache = _nm_cache_load()
+        if proto_id in cache:
+            return jsonify(cache[proto_id]['details'])
+        try:
+            neuron = _nm_fetch_by_id(int(proto_id[3:]))
+            item = _nm_to_item(neuron)
+            cache[proto_id] = item
+            _nm_cache_save(cache)
+            return jsonify(item['details'])
+        except Exception:
+            return jsonify({})
+
+    if proto_id.startswith('ab_'):
+        try:
+            specimen = _ab_fetch_by_id(int(proto_id[3:]))
+            return jsonify(_ab_to_details(specimen))
+        except Exception:
+            return jsonify({})
+
     for proto_type in ('morpho', 'chan', 'chem'):
         data = _load_registry(proto_type)
         if data:
@@ -247,7 +286,17 @@ def get_proto_detail(proto_id):
 def search_protos(proto_type):
     if proto_type not in ('morpho', 'chan', 'chem'):
         return jsonify({'error': 'Invalid type'}), 400
-    q = request.args.get('q', '').lower().strip()
+    q  = request.args.get('q', '').lower().strip()
+    db = request.args.get('db', 'Local')
+
+    if db == 'NeuroMorpho' and proto_type == 'morpho':
+        try:
+            raw = search_neurons(neuron_name=q if q else None, size=50)
+            neurons = raw.get('_embedded', {}).get('neuronResources', [])
+            return jsonify({'items': [_nm_to_item(n) for n in neurons]})
+        except Exception as e:
+            return jsonify({'error': str(e), 'items': []}), 500
+
     data = _load_registry(proto_type)
     if data is None:
         return jsonify({'items': []})
@@ -266,6 +315,19 @@ def stage_proto_file(proto_id, client_id):
     """Copy a server-side proto file into the user's uploads directory."""
     if not _is_safe_client_id(client_id):
         return jsonify({'error': 'Invalid client_id'}), 400
+
+    if proto_id.startswith('nm_'):
+        try:
+            return jsonify(_nm_stage(int(proto_id[3:]), client_id))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    if proto_id.startswith('ab_'):
+        try:
+            return jsonify(_ab_stage(int(proto_id[3:]), client_id))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     for proto_type in ('morpho', 'chan', 'chem'):
         data = _load_registry(proto_type)
         if data:

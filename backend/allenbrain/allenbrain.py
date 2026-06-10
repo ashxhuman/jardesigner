@@ -167,6 +167,64 @@ def search_neurons(
     }
 
 
+def specimen_to_details(s: dict) -> dict:
+    """Build the ProtoPicker details object from a raw AllenBrain specimen record."""
+
+    def _str(v):
+        """Coerce to string and strip Allen API's extra surrounding quotes."""
+        return str(v).strip().strip('"').strip() if v not in (None, '') else ''
+
+    # ── Basic metadata fields ────────────────────────────────────────────────
+    raw_fields = [
+        ('Species',           _str(s.get('donor__species'))),
+        ('Age',               _str(s.get('donor__age'))),
+        ('Sex',               _str(s.get('donor__sex'))),
+        ('Disease State',     _str(s.get('donor__disease_state'))),
+        ('Structure',         _str(s.get('structure__name'))),
+        ('Acronym',           _str(s.get('structure__acronym'))),
+        ('Layer',             _str(s.get('structure__layer'))),
+        ('Hemisphere',        _str(s.get('specimen__hemisphere'))),
+        ('Dendrite Type',     _str(s.get('tag__dendrite_type'))),
+        ('Apical Dendrite',   _str(s.get('tag__apical'))),
+        ('Transgenic Line',   _str(s.get('line_name'))),
+        ('Reporter Status',   _str(s.get('cell_reporter_status'))),
+    ]
+    detail = {
+        'fields': [{'label': k, 'value': v} for k, v in raw_fields if v not in ('', 'NA')],
+    }
+
+    # ── Available models ──────────────────────────────────────────────────────
+    models = []
+    if s.get('m__glif'):            models.append(f"GLIF ({s['m__glif']} variant{'s' if s['m__glif'] != 1 else ''})")
+    if s.get('m__biophys_perisomatic'): models.append('Biophysical perisomatic')
+    if s.get('m__biophys_all_active'):  models.append('Biophysical all-active')
+    if models:
+        detail['fields'].append({'label': 'Models Available', 'value': ', '.join(models)})
+
+    # ── Morphology thumbnail ─────────────────────────────────────────────────
+    thumb = s.get('morph_thumb_path') or ''
+    if thumb:
+        file_id = thumb.rstrip('/').split('/')[-1]
+        detail['image_url'] = f"/allenbrain/thumb/{file_id}"
+
+    return detail
+
+
+def fetch_specimen_by_id(specimen_id: int) -> dict:
+    """Return a single specimen record by ID."""
+    rma = (
+        f"model::ApiCellTypesSpecimenDetail,"
+        f"rma::criteria,[specimen__id$eq{specimen_id}],"
+        f"rma::options[num_rows$eq1]"
+    )
+    resp = requests.get(_RMA_URL, params={"criteria": rma}, timeout=_QUERY_TIMEOUT)
+    resp.raise_for_status()
+    data = resp.json()
+    if not data.get("success") or not data.get("msg"):
+        raise RuntimeError(f"Specimen {specimen_id} not found")
+    return data["msg"][0]
+
+
 # ── SWC download ──────────────────────────────────────────────────────────────
 
 def fetch_swc_for_specimen(specimen_id: int) -> tuple:

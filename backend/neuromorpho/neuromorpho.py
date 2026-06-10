@@ -4,6 +4,8 @@
 # Handles all outbound HTTP requests to the NeuroMorpho API.
 # Selects primary or fallback base URL on startup.
 ##############################################
+import datetime
+import re
 import requests
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -138,6 +140,136 @@ def fetch_neuron_metadata(species: str) -> Dict:
     }
 
 
+def fetch_neuron_by_id(neuron_id: int) -> Dict:
+    """Return the raw neuron record for a single neuron ID."""
+    resp = requests.get(f"{BASE_URL}/neuron/id/{neuron_id}", headers=_HEADERS, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _coerce_list(v) -> str:
+    return ', '.join(v) if isinstance(v, list) else (v or '')
+
+
+def neuron_to_item(neuron: Dict) -> Dict:
+    """Map a raw NeuroMorpho neuron record to the ProtoPicker item schema."""
+    nid = neuron['neuron_id']
+    return {
+        'id':              f"nm_{nid}",
+        'name':            neuron.get('neuron_name', str(nid)),
+        'source':          f"NeuroMorpho / {neuron.get('archive', '')}",
+        'description':     ' '.join(filter(None, [
+                               _coerce_list(neuron.get('species')),
+                               _coerce_list(neuron.get('brain_region')),
+                               _coerce_list(neuron.get('cell_type')),
+                           ])),
+        'source_type':     'file',
+        'topTen':          False,
+        'server_file':     f"nm_{nid}",
+        'staged_filename': f"nm_{nid}",
+        'details':         neuron_to_details(neuron),
+    }
+
+
+def fetch_archive_pmids(archive: str) -> List[str]:
+    """Return all unique PMIDs from every neuron in this archive."""
+    try:
+        result = search_neurons(archive=archive, size=500)
+        neurons = result.get("_embedded", {}).get("neuronResources", [])
+        seen: set = set()
+        pmids: List[str] = []
+        for n in neurons:
+            for p in (n.get("reference_pmid") or []):
+                s = str(p)
+                if s not in seen:
+                    seen.add(s)
+                    pmids.append(s)
+        return pmids
+    except Exception:
+        return []
+
+
+def fetch_literature_by_pmid(pmid: str) -> Optional[Dict]:
+    """Fetch paper metadata from NeuroMorpho literature API by PMID."""
+    try:
+        resp = requests.get(
+            f"{BASE_URL}/literature/select",
+            params={"q": f"pmid:{pmid}", "size": 1},
+            headers=_HEADERS,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        resources = resp.json().get("_embedded", {}).get("publicationResources", [])
+        return resources[0] if resources else None
+    except Exception:
+        return None
+
+
+def _format_ref_text(lit: Dict) -> str:
+    authors = lit.get("authors") or []
+    author_str = ", ".join(authors[:3])
+    if len(authors) > 3:
+        author_str += " et al."
+    ms = lit.get("publishedDate")
+    year = str(datetime.datetime.utcfromtimestamp(ms / 1000).year) if ms else ""
+    title = lit.get("title", "")
+    journal = lit.get("journal", "")
+    parts = [p for p in [author_str, f"({year})" if year else "", title, journal] if p]
+    return " ".join(parts)
+
+
+def _strip_html(text: str) -> str:
+    return re.sub(r"<[^>]+>", "", text).strip()
+
+
+def neuron_to_details(neuron: Dict) -> Dict:
+    """Build the ProtoPicker details object from a raw NeuroMorpho record."""
+    raw_fields = [
+        ('Archive',        neuron.get('archive')),
+        ('Species',        _coerce_list(neuron.get('species'))),
+        ('Brain Region',   _coerce_list(neuron.get('brain_region'))),
+        ('Cell Type',      _coerce_list(neuron.get('cell_type'))),
+        ('Age',            neuron.get('age_classification')),
+        ('Gender',         neuron.get('gender')),
+        ('Reconstruction', neuron.get('reconstruction_software')),
+        ('Protocol',       neuron.get('protocol')),
+    ]
+    detail: Dict = {
+        'fields': [{'label': k, 'value': v} for k, v in raw_fields if v],
+    }
+
+    if neuron.get('note'):
+        detail['full_description'] = _strip_html(neuron['note'])
+
+    # reference_pmid and reference_doi are parallel arrays on the neuron record
+    pmids = [str(p) for p in (neuron.get('reference_pmid') or [])]
+    dois  = neuron.get('reference_doi') or []
+
+    refs = []
+    for i, pmid in enumerate(pmids):
+        doi  = dois[i] if i < len(dois) else None
+        ref: Dict = {'pmid': pmid}
+        lit = fetch_literature_by_pmid(pmid)
+        if lit:
+            ref['text'] = _format_ref_text(lit)
+            doi = doi or lit.get('doi')
+        else:
+            ref['text'] = f"PMID: {pmid}"
+        if doi:
+            ref['url'] = f"https://doi.org/{doi}" if not doi.startswith('http') else doi
+        else:
+            ref['url'] = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+        refs.append(ref)
+
+    if refs:
+        detail['references'] = refs
+
+    if neuron.get('png_url'):
+        detail['image_url'] = neuron['png_url']
+
+    return detail
+
+
 def fetch_swc_direct(archive: str, name: str, neuron_id: int) -> Tuple[List["NeuronSWCData"], List[Dict]]:
     """
     Download a single SWC file when archive and neuron_name are already known.
@@ -156,48 +288,6 @@ def fetch_swc_direct(archive: str, name: str, neuron_id: int) -> Tuple[List["Neu
         )], []
     except Exception as e:
         return [], [{"neuron_id": neuron_id, "error": str(e)}]
-
-
-def fetch_swc_files(neuron_ids: List[int]) -> Tuple[List[NeuronSWCData], List[Dict]]:
-    """
-    Download SWC files for a list of neuron IDs.
-    Returns (successes, failures) where each failure is {neuron_id, error}.
-    """
-    successes: List[NeuronSWCData] = []
-    failures: List[Dict] = []
-    for nid in neuron_ids:
-        try:
-            # Look up the neuron record to get archive + name
-            meta = requests.get(f"{BASE_URL}/neuron/id/{nid}", headers=_HEADERS, timeout=30)
-            meta.raise_for_status()
-            item = meta.json()
-
-            archive = item.get("archive", "").lower()
-            name = item.get("neuron_name", "")
-
-            if not archive or not name:
-                failures.append({"neuron_id": nid, "error": "Missing archive or neuron_name"})
-                continue
-
-            # Download the SWC file from neuromorpho.org
-            swc = requests.get(f"https://neuromorpho.org/dableFiles/{archive}/CNG version/{name}.CNG.swc", headers=_HEADERS, timeout=40)
-
-            if swc.status_code != 200:
-                failures.append({"neuron_id": nid, "error": f"SWC download failed: HTTP {swc.status_code}"})
-                continue
-
-            successes.append(NeuronSWCData(
-                neuron_id=nid,
-                neuron_name=name,
-                archive_name=archive,
-                swc_content=swc.text,
-                api_data=item,
-            ))
-
-        except Exception as e:
-            failures.append({"neuron_id": nid, "error": str(e)})
-
-    return successes, failures
 
 
 # ---------------------------------------------------------------------------
