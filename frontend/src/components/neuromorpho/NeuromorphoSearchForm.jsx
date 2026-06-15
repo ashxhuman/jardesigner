@@ -14,7 +14,6 @@ const toItem = (n) => ({
     source_type:     'file',
     topTen:          false,
     server_file:     `nm_${n.neuron_id}`,
-    staged_filename: `nm_${n.neuron_id}`,
     ...(n.note || n.reference ? {
         details: {
             ...(n.note      && { full_description: n.note }),

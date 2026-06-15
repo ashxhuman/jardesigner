@@ -44,19 +44,6 @@ def _unique_sorted(rows, key):
     return sorted({r[key] for r in rows if r.get(key)})
 
 
-async def fetch_filter_options() -> dict:
-    rows = await _rma_query(
-        "ApiCellTypesSpecimenDetail",
-        criteria="[nr__reconstruction_type$nenull]",
-        num_rows="all",
-    )
-    return {
-        "dendrite_types":       _unique_sorted(rows, "tag__dendrite_type"),
-        "apical":               _unique_sorted(rows, "tag__apical"),
-        "reconstruction_types": _unique_sorted(rows, "nr__reconstruction_type"),
-    }
-
-
 async def fetch_species_options(species: str) -> dict:
     rows = await _rma_query(
         "ApiCellTypesSpecimenDetail",
@@ -102,16 +89,9 @@ async def fetch_species_options(species: str) -> dict:
 
 async def search_neurons(
     species=None,
-    sex=None,
-    disease_state=None,
     brain_area_acronym=None,
     brain_area_parent_acronym=None,
     layer=None,
-    hemisphere=None,
-    dendrite_type=None,
-    apical=None,
-    reconstruction_type=None,
-    reporter_status=None,
     line_name=None,
     page=0,
     size=20,
@@ -119,16 +99,9 @@ async def search_neurons(
     filters = ["[nr__reconstruction_type$nenull]"]
 
     if species:                   filters.append(f"[donor__species$il'{_safe_filter_value(species)}']")
-    if sex:                       filters.append(f"[donor__sex$eq'{_safe_filter_value(sex)}']")
-    if disease_state:             filters.append(f"[donor__disease_state$il'{_safe_filter_value(disease_state)}']")
     if brain_area_acronym:        filters.append(f"[structure__acronym$eq'{_safe_filter_value(brain_area_acronym)}']")
     if brain_area_parent_acronym: filters.append(f"[structure_parent__acronym$eq'{_safe_filter_value(brain_area_parent_acronym)}']")
     if layer:                     filters.append(f"[structure__layer$eq'{_safe_filter_value(layer)}']")
-    if hemisphere:                filters.append(f"[specimen__hemisphere$eq'{_safe_filter_value(hemisphere)}']")
-    if dendrite_type:             filters.append(f"[tag__dendrite_type$eq'{_safe_filter_value(dendrite_type)}']")
-    if apical:                    filters.append(f"[tag__apical$eq'{_safe_filter_value(apical)}']")
-    if reconstruction_type:       filters.append(f"[nr__reconstruction_type$eq'{_safe_filter_value(reconstruction_type)}']")
-    if reporter_status:           filters.append(f"[cell_reporter_status$eq'{_safe_filter_value(reporter_status)}']")
     if line_name:                 filters.append(f"[line_name$il'{_safe_filter_value(line_name)}']")
 
     start_row = page * size

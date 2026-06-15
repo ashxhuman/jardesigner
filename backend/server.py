@@ -221,7 +221,6 @@ def handle_sim_command(data):
 PROTO_REGISTRY_DIR = os.path.join(BASE_DIR, 'proto_registry')
 _ALLOWED_STAGING_DIRS = {'CELL_MODELS', 'CHEM_MODELS', 'CHAN_MODELS'}
 
-
 _NM_ITEM_CACHE = os.path.join(BASE_DIR, 'data', 'neuromorpho', 'item_cache.json')
 
 def _nm_cache_load():
@@ -738,6 +737,8 @@ def get_session_file(client_id, filename):
     if not _is_safe_client_id(client_id) or '..' in filename or filename.startswith('/'):
         return jsonify({"status": "error", "message": "Invalid path."}), 400
     session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
+    if filename == 'user_registry.json' and not os.path.isfile(os.path.join(session_dir, filename)):
+        return jsonify({"morpho": {"items": []}, "chan": {"items": []}, "chem": {"items": []}})
     return send_from_directory(session_dir, filename)
 
 @app.route('/reset_simulation', methods=['POST'])

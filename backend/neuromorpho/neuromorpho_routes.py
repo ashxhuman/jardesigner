@@ -107,6 +107,9 @@ def search():
         "has_prev":      current_page > 0,
     })
 
+def _coerce(v):
+    return ", ".join(v) if isinstance(v, list) else (v or "")
+
 
 def stage_neuron(neuron_id: int, client_id: str) -> dict:
     """Download SWC for neuron_id and save to the user's session directory."""
@@ -125,7 +128,56 @@ def stage_neuron(neuron_id: int, client_id: str) -> dict:
     dest_dir = USER_UPLOADS_DIR / client_id
     dest_dir.mkdir(parents=True, exist_ok=True)
     (dest_dir / filename).write_text(swc.swc_content, encoding="utf-8")
+
+    item = {
+        "id":          f"nm_{neuron_id}",
+        "name":        name,
+        "source":      f"NeuroMorpho / {archive}",
+        "description": " ".join(filter(None, [
+            _coerce(rec.get("species")),
+            _coerce(rec.get("brain_region")),
+            _coerce(rec.get("cell_type")),
+        ])),
+        "source_type":     "file",
+        "file_type":       "swc",
+        "server_file":     filename,
+        "details": {
+            "fields": [
+                {"label": k, "value": v} for k, v in [
+                    ("Archive",      archive),
+                    ("Species",      _coerce(rec.get("species"))),
+                    ("Brain Region", _coerce(rec.get("brain_region"))),
+                    ("Cell Type",    _coerce(rec.get("cell_type"))),
+                    ("Age",          rec.get("age_classification", "")),
+                    ("Gender",       rec.get("gender", "")),
+                ] if v
+            ],
+            **({"image_url": rec["png_url"]} if rec.get("png_url") else {}),
+        },
+    }
+    try:
+        _upsert_user_registry(dest_dir, item)
+    except Exception:
+        pass  # registry update is best-effort; don't fail the download
+
     return {"filename": filename}
+
+
+def _upsert_user_registry(dest_dir: Path, item: dict) -> None:
+    path = dest_dir / "user_registry.json"
+    try:
+        registry = json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        registry = {}
+    section = registry.setdefault("morpho", {"items": []})
+    items = section.setdefault("items", [])
+    for i, existing in enumerate(items):
+        if existing.get("id") == item["id"]:
+            items[i] = item
+            break
+    else:
+        items.append(item)
+    path.write_text(json.dumps(registry, indent=2))
 
 
 @neuromorpho_routes.route("/health", methods=["GET"])

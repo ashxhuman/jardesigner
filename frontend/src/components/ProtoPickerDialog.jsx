@@ -226,6 +226,7 @@ const TopTenHeaderRow = () => (
 // --- Main dialog ---
 const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) => {
     const [digest, setDigest] = useState([]);
+    const [sessionItems, setSessionItems] = useState([]);
     const [loading, setLoading] = useState(false);
     const [staging, setStaging] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -241,6 +242,14 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
 
     const baseUrl = `http://${window.location.hostname}:5000`;
 
+    const refreshSessionItems = useCallback(() => {
+        if (!clientId || !type) return;
+        fetch(`${baseUrl}/session_file/${clientId}/user_registry.json`)
+            .then(r => r.ok ? r.json() : {})
+            .then(data => setSessionItems(data[type]?.items || []))
+            .catch(() => setSessionItems([]));
+    }, [clientId, type, baseUrl]);
+
     useEffect(() => {
         if (!open || !type) return;
         setLoading(true);
@@ -250,11 +259,13 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
         setSearchQuery('');
         setSelectedDb('Local');
         setStagingError(null);
+        setSessionItems([]);
         fetch(`${baseUrl}/proto_digest/${type}`)
             .then(r => r.json())
             .then(data => setDigest(data.items || []))
             .catch(err => console.error('Failed to load proto digest:', err))
             .finally(() => setLoading(false));
+        refreshSessionItems();
     }, [open, type]);
 
     const handleSearch = useCallback(async () => {
@@ -318,6 +329,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                     setStagingError(data.error || `Download failed (HTTP ${r.status})`);
                     return;
                 }
+                refreshSessionItems();
                 onSelect({ ...item, staged_filename: data.filename });
                 onClose();
             } catch (err) {
@@ -329,7 +341,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
             onSelect(item);
             onClose();
         }
-    }, [clientId, baseUrl, onSelect, onClose]);
+    }, [clientId, baseUrl, onSelect, onClose, refreshSessionItems]);
 
     const handleUpload = useCallback(async (e) => {
         const file = e.target.files[0];
@@ -367,11 +379,12 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
             displayItems:  searchResults.filter(i => !i.topTen),
             displayTopTen: searchResults.filter(i =>  i.topTen),
         };
+        if (selectedDb !== 'Local') return { displayItems: [], displayTopTen: [] };
         return {
-            displayItems:  digest.filter(d => !d.topTen),
+            displayItems:  [...sessionItems, ...digest.filter(d => !d.topTen)],
             displayTopTen: digest.filter(d =>  d.topTen),
         };
-    }, [digest, searchResults]);
+    }, [digest, searchResults, sessionItems, selectedDb]);
     return (
         <Dialog
             open={open}

@@ -14,7 +14,6 @@ const toItem = (s) => ({
     source_type:     'file',
     topTen:          false,
     server_file:     `ab_${s.specimen__id}`,
-    staged_filename: `ab_${s.specimen__id}`,
 });
 
 export default function AllenBrainSearchForm({ onResults, footerEl, baseUrl = 'http://localhost:5000' }) {

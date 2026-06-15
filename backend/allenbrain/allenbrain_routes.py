@@ -7,6 +7,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+import json
+
 from extensions import run_async
 from .allenbrain import (
     fetch_species_options,
@@ -14,6 +16,7 @@ from .allenbrain import (
     fetch_swc_for_specimen,
     fetch_morph_thumb,
     fetch_specimen_by_id,
+    specimen_to_details,
 )
 
 allenbrain_routes = Blueprint("allenbrain", __name__)
@@ -55,16 +58,9 @@ def search():
     try:
         result = run_async(search_neurons(
             species                   = body.get("species")                   or None,
-            sex                       = body.get("sex")                       or None,
-            disease_state             = body.get("disease_state")             or None,
             brain_area_acronym        = body.get("brain_area_acronym")        or None,
             brain_area_parent_acronym = body.get("brain_area_parent_acronym") or None,
             layer                     = body.get("layer")                     or None,
-            hemisphere                = body.get("hemisphere")                or None,
-            dendrite_type             = body.get("dendrite_type")             or None,
-            apical                    = body.get("apical")                    or None,
-            reconstruction_type       = body.get("reconstruction_type")       or None,
-            reporter_status           = body.get("reporter_status")           or None,
             line_name                 = body.get("line_name")                 or None,
             page                      = page,
             size                      = size,
@@ -101,7 +97,51 @@ def stage_specimen(specimen_id: int, client_id: str) -> dict:
     dest_dir = USER_UPLOADS_DIR / client_id
     dest_dir.mkdir(parents=True, exist_ok=True)
     (dest_dir / filename).write_text(swc_text, encoding="utf-8")
+
+    try:
+        s       = run_async(fetch_specimen_by_id(specimen_id))
+        details = specimen_to_details(s)
+
+        def _str(v):
+            return str(v).strip().strip('"').strip() if v not in (None, '') else ''
+
+        item = {
+            "id":          f"ab_{specimen_id}",
+            "name":        filename.replace(".swc", ""),
+            "source":      f"AllenBrain / {_str(s.get('donor__species'))}",
+            "description": " ".join(filter(None, [
+                _str(s.get("structure__name")),
+                _str(s.get("structure__layer")),
+                _str(s.get("tag__dendrite_type")),
+            ])),
+            "source_type":     "file",
+            "file_type":       "swc",
+            "server_file":     filename,
+            "staged_filename": filename,
+            "details":     details,
+        }
+        _upsert_user_registry(dest_dir, item)
+    except Exception:
+        pass  # registry update is best-effort; don't fail the download
+
     return {"filename": filename}
+
+
+def _upsert_user_registry(dest_dir, item: dict) -> None:
+    path = dest_dir / "user_registry.json"
+    try:
+        registry = json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        registry = {}
+    section = registry.setdefault("morpho", {"items": []})
+    items = section.setdefault("items", [])
+    for i, existing in enumerate(items):
+        if existing.get("id") == item["id"]:
+            items[i] = item
+            break
+    else:
+        items.append(item)
+    path.write_text(json.dumps(registry, indent=2))
 
 
 @allenbrain_routes.route("/health", methods=["GET"])
