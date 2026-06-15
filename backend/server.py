@@ -34,12 +34,13 @@ CORS(app)
 # Quiet logging
 socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False, async_mode='gevent')
 
-from neuromorpho.neuromorpho_routes import neuromorpho_routes, stage_neuron as _nm_stage
-from neuromorpho.neuromorpho import search_neurons, fetch_neuron_by_id as _nm_fetch_by_id, neuron_to_item as _nm_to_item
+from extensions import run_async
+from neuromorpho.neuromorpho_routes import neuromorpho_routes, stage_neuron as nm_stage
+from neuromorpho.neuromorpho import search_neurons as nm_search_neurons, fetch_neuron_by_id as nm_fetch_neuron_id, neuron_to_item as nm_to_item
 app.register_blueprint(neuromorpho_routes, url_prefix="/neuromorpho")
 
-from allenbrain.allenbrain_routes import allenbrain_routes, stage_specimen as _ab_stage
-from allenbrain.allenbrain import fetch_specimen_by_id as _ab_fetch_by_id, specimen_to_details as _ab_to_details
+from allenbrain.allenbrain_routes import allenbrain_routes, stage_specimen as ab_stage
+from allenbrain.allenbrain import fetch_specimen_by_id as ab_fetch_by_id, specimen_to_details as ab_to_details
 app.register_blueprint(allenbrain_routes, url_prefix="/allenbrain")
 
 # --- Store running process and session info ---
@@ -260,8 +261,8 @@ def get_proto_detail(proto_id):
         if proto_id in cache:
             return jsonify(cache[proto_id]['details'])
         try:
-            neuron = _nm_fetch_by_id(int(proto_id[3:]))
-            item = _nm_to_item(neuron)
+            neuron = run_async(nm_fetch_neuron_id(int(proto_id[3:])))
+            item   = run_async(nm_to_item(neuron))
             cache[proto_id] = item
             _nm_cache_save(cache)
             return jsonify(item['details'])
@@ -270,8 +271,8 @@ def get_proto_detail(proto_id):
 
     if proto_id.startswith('ab_'):
         try:
-            specimen = _ab_fetch_by_id(int(proto_id[3:]))
-            return jsonify(_ab_to_details(specimen))
+            specimen = run_async(ab_fetch_by_id(int(proto_id[3:])))
+            return jsonify(ab_to_details(specimen))
         except Exception:
             return jsonify({})
 
@@ -292,9 +293,11 @@ def search_protos(proto_type):
 
     if db == 'NeuroMorpho' and proto_type == 'morpho':
         try:
-            raw = search_neurons(neuron_name=q if q else None, size=50)
+            raw     = run_async(nm_search_neurons(size=50))
             neurons = raw.get('_embedded', {}).get('neuronResources', [])
-            return jsonify({'items': [_nm_to_item(n) for n in neurons]})
+            import asyncio
+            items   = run_async(asyncio.gather(*[nm_to_item(n) for n in neurons]))
+            return jsonify({'items': list(items)})
         except Exception as e:
             return jsonify({'error': str(e), 'items': []}), 500
 
@@ -319,13 +322,13 @@ def stage_proto_file(proto_id, client_id):
 
     if proto_id.startswith('nm_'):
         try:
-            return jsonify(_nm_stage(int(proto_id[3:]), client_id))
+            return jsonify(nm_stage(int(proto_id[3:]), client_id))
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
     if proto_id.startswith('ab_'):
         try:
-            return jsonify(_ab_stage(int(proto_id[3:]), client_id))
+            return jsonify(ab_stage(int(proto_id[3:]), client_id))
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 

@@ -7,11 +7,13 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+from extensions import run_async
 from .allenbrain import (
     fetch_species_options,
     search_neurons,
     fetch_swc_for_specimen,
     fetch_morph_thumb,
+    fetch_specimen_by_id,
 )
 
 allenbrain_routes = Blueprint("allenbrain", __name__)
@@ -29,7 +31,7 @@ def get_species_filters():
     if not species:
         return jsonify({"error": "species query param required"}), 400
     try:
-        return jsonify(fetch_species_options(species))
+        return jsonify(run_async(fetch_species_options(species)))
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -51,22 +53,22 @@ def search():
         return jsonify({"error": "page and size must be integers"}), 400
 
     try:
-        result = search_neurons(
-            species                   = body.get("species") or None,
-            sex                       = body.get("sex") or None,
-            disease_state             = body.get("disease_state") or None,
-            brain_area_acronym        = body.get("brain_area_acronym") or None,
+        result = run_async(search_neurons(
+            species                   = body.get("species")                   or None,
+            sex                       = body.get("sex")                       or None,
+            disease_state             = body.get("disease_state")             or None,
+            brain_area_acronym        = body.get("brain_area_acronym")        or None,
             brain_area_parent_acronym = body.get("brain_area_parent_acronym") or None,
-            layer                     = body.get("layer") or None,
-            hemisphere                = body.get("hemisphere") or None,
-            dendrite_type             = body.get("dendrite_type") or None,
-            apical                    = body.get("apical") or None,
-            reconstruction_type       = body.get("reconstruction_type") or None,
-            reporter_status           = body.get("reporter_status") or None,
-            line_name                 = body.get("line_name") or None,
+            layer                     = body.get("layer")                     or None,
+            hemisphere                = body.get("hemisphere")                or None,
+            dendrite_type             = body.get("dendrite_type")             or None,
+            apical                    = body.get("apical")                    or None,
+            reconstruction_type       = body.get("reconstruction_type")       or None,
+            reporter_status           = body.get("reporter_status")           or None,
+            line_name                 = body.get("line_name")                 or None,
             page                      = page,
             size                      = size,
-        )
+        ))
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -86,7 +88,7 @@ def search():
 def get_thumb(file_id: int):
     """GET /allenbrain/thumb/<file_id> — proxy morphology thumbnail."""
     try:
-        img_bytes, content_type = fetch_morph_thumb(file_id)
+        img_bytes, content_type = run_async(fetch_morph_thumb(file_id))
         return img_bytes, 200, {"Content-Type": content_type}
     except Exception as e:
         traceback.print_exc()
@@ -94,9 +96,8 @@ def get_thumb(file_id: int):
 
 
 def stage_specimen(specimen_id: int, client_id: str) -> dict:
-    """Download SWC for specimen_id and save to the user's session directory.
-    Returns {"filename": "<name>.swc"}. Raises on failure."""
-    swc_text, filename = fetch_swc_for_specimen(specimen_id)
+    """Download SWC for specimen_id and save to the user's session directory."""
+    swc_text, filename = run_async(fetch_swc_for_specimen(specimen_id))
     dest_dir = USER_UPLOADS_DIR / client_id
     dest_dir.mkdir(parents=True, exist_ok=True)
     (dest_dir / filename).write_text(swc_text, encoding="utf-8")
