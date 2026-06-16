@@ -1267,13 +1267,13 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                         tabs.vec.threshold = -0.02 # Threshold for classifying Vm as a spike.
                         tabs.vec.useSpikeMode = True # spike detect mode on
 
-            vtabs = moose.vec( tabs )
-            q = 0
-            for p in [ x for x in plotObj if x != dummy ]:
-                #print( p.path, plotField, q )
-                moose.connect( vtabs[q], 'requestOut', p, plotField )
-                objList.append( p )
-                q += 1
+                vtabs = moose.vec( tabs )
+                q = 0
+                for p in [ x for x in plotObj if x != dummy ]:
+                    #print( p.path, plotField, q )
+                    moose.connect( vtabs[q], 'requestOut', p, plotField )
+                    objList.append( p )
+                    q += 1
 
     def _buildMoogli( self ):
         if not hasattr( self, 'moogli' ):

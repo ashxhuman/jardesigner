@@ -220,14 +220,14 @@ export const AppLayout = (props) => {
         // --- Added channelPrototypes ---
         channelPrototypes={channelPrototypes}
     />,
-    Plots: <PlotMenuBox 
-        onConfigurationChange={updateJsonData} 
-        currentConfig={jsonData.plots} 
-        meshMols={meshMolsData?.setup} 
-        elecPaths={elecPaths} 
-        spinePaths={spinePaths} 
-        // --- Added channelPrototypes ---
+    Plots: <PlotMenuBox
+        onConfigurationChange={updateJsonData}
+        currentConfig={jsonData.plots}
+        meshMols={meshMolsData?.setup}
+        elecPaths={elecPaths}
+        spinePaths={spinePaths}
         channelPrototypes={channelPrototypes}
+        stims={jsonData.stims}
     />,
     '3D': <ThreeDMenuBox 
         onConfigurationChange={updateJsonData} 

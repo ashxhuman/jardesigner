@@ -78,13 +78,14 @@ const HelpField = React.memo(({ id, label, value, onChange, onBlur, type = "text
 });
 
 // --- Main Component ---
-const PlotMenuBox = ({ 
-    onConfigurationChange, 
-    currentConfig, 
+const PlotMenuBox = ({
+    onConfigurationChange,
+    currentConfig,
     meshMols,
     elecPaths = [],
     spinePaths = [],
-    channelPrototypes = [] // List of channel prototype names
+    channelPrototypes = [],
+    stims = []
 }) => {
     const [plots, setPlots] = useState(() => {
         const initialPlots = currentConfig?.map(p => {
@@ -119,6 +120,9 @@ const PlotMenuBox = ({
                 }
             } else {
                 initialChildPath = p.relpath || '';
+                if (field === 'current' && !initialChildPath) {
+                    initialChildPath = 'vclamp';
+                }
             }
 
             return {
@@ -189,9 +193,14 @@ const PlotMenuBox = ({
                             updatedPlot.childPath = '';
                             updatedPlot.molIndex = '';
                         } else if (!wasChem && isNowChem) {
-                            updatedPlot.chemProto = ''; 
+                            updatedPlot.chemProto = '';
                             updatedPlot.childPath = '';
                             updatedPlot.molIndex = '';
+                        }
+                        if (value === 'current') {
+                            updatedPlot.childPath = 'vclamp';
+                        } else if (plot.field === 'current' && !isNowChem) {
+                            updatedPlot.childPath = '';
                         }
                     }
 
@@ -262,6 +271,14 @@ const PlotMenuBox = ({
         return Array.isArray(mols) ? [...mols].sort() : [];
     }, [isChemField, meshMols, activePlotData?.chemProto]);
 
+
+    const vclampPaths = useMemo(() => {
+        const paths = new Set();
+        if (Array.isArray(stims)) {
+            stims.forEach(s => { if (s.field === 'vclamp' && s.path) paths.add(s.path); });
+        }
+        return paths;
+    }, [stims]);
 
     // --- Save/Refresh Logic ---
     const getPlotDataForSave = useCallback(() => {
@@ -430,6 +447,25 @@ const PlotMenuBox = ({
                                     />
                                 </Grid>
                              </>
+                         ) : activePlotData.field === 'current' ? (
+                             <Grid item xs={12} sm={6}>
+                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                     <TextField
+                                         fullWidth
+                                         size="small"
+                                         label="Relative Path"
+                                         value="vclamp"
+                                         disabled
+                                         variant="outlined"
+                                         error={stims.length > 0 && !vclampPaths.has(activePlotData.path)}
+                                     />
+                                     <Tooltip title="VClamp child object — required for the 'current' field" placement="right">
+                                         <IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton>
+                                     </Tooltip>
+                                 </Box>
+                                 {stims.length > 0 && !vclampPaths.has(activePlotData.path) &&
+                                     <FormHelperText error>Warning: No VClamp stim on this compartment</FormHelperText>}
+                             </Grid>
                          ) : (
                              <>
                                  {/* Relative Path as Menu for Non-Chem Fields */}
