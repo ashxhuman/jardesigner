@@ -9,6 +9,10 @@ import somaIcon from '../../assets/soma.svg';
 import ballAndStickIcon from '../../assets/ballAndStick.svg';
 import yBranchIcon from '../../assets/ybranch.svg';
 import { formatFloat } from '../../utils/formatters.js';
+import { NeuromorphoDialog } from '../neuromorpho/index.js';
+import { AllenBrainDialog } from '../allenbrain/index.js';
+import NMOLOGO from '../../assets/DataRepository/NMOLOGO.png';
+import ABCLOGO from '../../assets/DataRepository/abc_logo.png';
 
 // --- Unit Conversion Helpers ---
 const toMeters = (microns) => {
@@ -128,10 +132,31 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
         stateRefs.current = { tabIndex, somaValues, ballAndStickValues, yBranchValues };
     }, [tabIndex, somaValues, ballAndStickValues, yBranchValues]);
 
-    const handleSomaChange = useCallback((field, value) => setSomaValues(prev => ({...prev, [field]: value})), []);
-    const handleBallAndStickChange = useCallback((field, value) => setBallAndStickValues(prev => ({...prev, [field]: value})), []);
-    const handleYBranchChange = useCallback((field, value) => setYBranchValues(prev => ({...prev, [field]: value})), []);
+    const handleSomaChange = useCallback((field, value) => setSomaValues(prev => ({ ...prev, [field]: value })), []);
+    const handleBallAndStickChange = useCallback((field, value) => setBallAndStickValues(prev => ({ ...prev, [field]: value })), []);
+    const handleYBranchChange = useCallback((field, value) => setYBranchValues(prev => ({ ...prev, [field]: value })), []);
     const handleTabChange = (event, newIndex) => setTabIndex(newIndex);
+    const handleFileSelect = () => fileInputRef.current.click();
+
+    const handleFileChange = async (event) => {
+        const file = event.target.files[0];
+        if (!file || !onFileChange || !clientId) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('clientId', clientId);
+        try {
+            const uploadUrl = `http://${window.location.hostname}:5000/upload_file`;
+            const response = await fetch(uploadUrl, { method: 'POST', body: formData });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || 'File upload failed');
+            }
+            onFileChange({ filename: file.name });
+        } catch (error) {
+            console.error("Error uploading file:", error);
+            alert(`Failed to upload the selected file: ${error.message}`);
+        }
+    };
 
     useEffect(() => {
         const getMorphologyDataForUnmount = () => {
@@ -184,6 +209,13 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
             }
         };
     }, []);
+    const [open, setOpen] = React.useState(false);
+    const handleOpen = () => setOpen(true);
+    const handleClose = () => setOpen(false);
+
+    const [allenOpen, setAllenOpen] = React.useState(false);
+    const handleAllenOpen = () => setAllenOpen(true);
+    const handleAllenClose = () => setAllenOpen(false);
 
     return (
         <Box sx={{ p: 2, background: '#f5f5f5', borderRadius: 2 }}>

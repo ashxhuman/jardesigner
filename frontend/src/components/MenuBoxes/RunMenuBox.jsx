@@ -13,7 +13,6 @@ const helpText = {
     otherSettings: { modelPath: "Path to the model on the server.", odeMethod: "Method for solving ordinary differential equations.", randSeed: "Seed for random number generation.", temperature: "Simulation temperature in Celsius." }
 };
 
-
 const safeToString = (value, defaultValue = '') => {
     if (value === null || value === undefined) {
         return defaultValue;
@@ -51,15 +50,17 @@ const RunMenuBox = ({
     setRunParameters,
     currentConfig,
     onStartRun,
+    onPauseRun,
+    onResumeRun,
     onResetRun,
     onBuildAndStartRun,
     onStopRun,
     isSimulating,
+    isPaused,
     activeSimPid,
     liveFrameData,
     isReplaying,
 }) => {
-
     const [runtime, setRuntime] = useState(() => safeToString(currentConfig?.runtime, defaultRunConfig.runtime));
     const [clocks, setClocks] = useState(() => ({
         elec: safeToString(currentConfig?.elecDt, defaultRunConfig.elecDt),
@@ -70,32 +71,32 @@ const RunMenuBox = ({
         function: safeToString(currentConfig?.funcDt, defaultRunConfig.funcDt),
         status: safeToString(currentConfig?.statusDt, defaultRunConfig.statusDt),
     }));
-    const [configSettings, setConfigSettings] = useState(() => {
-        return {
-            randSeed: safeToString(currentConfig?.randseed, defaultRunConfig.randseed),
-            temperature: safeToString(currentConfig?.temperature, defaultRunConfig.temperature),
-            modelPath: safeToString(currentConfig?.modelPath, defaultRunConfig.modelPath),
-            odeMethod: safeToString(currentConfig?.odeMethod, defaultRunConfig.odeMethod),
-            turnOffElec: currentConfig?.turnOffElec ?? defaultRunConfig.turnOffElec,
-            useGssa: currentConfig?.useGssa ?? defaultRunConfig.useGssa,
-            combineSegments: currentConfig?.combineSegments ?? defaultRunConfig.combineSegments,
-            reuseLibraryCell: currentConfig?.stealCellFromLibrary ?? defaultRunConfig.stealCellFromLibrary,
-        };
-    });
+    const [configSettings, setConfigSettings] = useState(() => ({
+        randSeed: safeToString(currentConfig?.randseed, defaultRunConfig.randseed),
+        temperature: safeToString(currentConfig?.temperature, defaultRunConfig.temperature),
+        modelPath: safeToString(currentConfig?.modelPath, defaultRunConfig.modelPath),
+        odeMethod: safeToString(currentConfig?.odeMethod, defaultRunConfig.odeMethod),
+        turnOffElec: currentConfig?.turnOffElec ?? defaultRunConfig.turnOffElec,
+        useGssa: currentConfig?.useGssa ?? defaultRunConfig.useGssa,
+        combineSegments: currentConfig?.combineSegments ?? defaultRunConfig.combineSegments,
+        reuseLibraryCell: currentConfig?.stealCellFromLibrary ?? defaultRunConfig.stealCellFromLibrary,
+    }));
 
     const [currentTime, setCurrentTime] = useState(0.0);
     const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
-    const [startButtonText, setStartButtonText] = useState('Start');
 
     const onConfigurationChangeRef = useRef(onConfigurationChange);
     useEffect(() => { onConfigurationChangeRef.current = onConfigurationChange; }, [onConfigurationChange]);
 
     // Saves elecPlotDt, funcDt, and per-drawable moogli dt before turnOffElec overrides them
     const savedDtsRef = useRef(null);
-    
+
+
     useEffect(() => {
         if (isReplaying) {
             setStatusMessage({ type: 'info', text: 'Replaying simulation in 3D viewer...' });
+        } else if (isPaused) {
+            setStatusMessage({ type: 'warning', text: 'Simulation paused. Click Continue to resume.' });
         } else if (isSimulating) {
             setStatusMessage({ type: 'info', text: `Simulation running (PID: ${activeSimPid})...` });
         } else if (activeSimPid) {
@@ -103,24 +104,14 @@ const RunMenuBox = ({
         } else {
             setStatusMessage({ type: 'info', text: 'No active simulation. Change a setting to build the model.' });
         }
-    }, [isSimulating, isReplaying, activeSimPid]);
-
-	useEffect(() => {
-    	const frameForRunView = liveFrameData?.run;
-    	if (frameForRunView && typeof frameForRunView.timestamp === 'number') {
-        	setCurrentTime(frameForRunView.timestamp);
-    	}
-	}, [liveFrameData]);
+    }, [isSimulating, isReplaying, isPaused, activeSimPid, currentTime]);
 
     useEffect(() => {
-        const simHasFinished = !isSimulating && currentTime > 0;
-        if (simHasFinished) {
-            setStartButtonText('Continue');
-        } else {
-            setStartButtonText('Start');
+        const frameForRunView = liveFrameData?.run;
+        if (frameForRunView && typeof frameForRunView.timestamp === 'number') {
+            setCurrentTime(frameForRunView.timestamp);
         }
-    }, [isSimulating, currentTime]);
-
+    }, [liveFrameData]);
 
     const handleRuntimeChange = (value) => setRuntime(value);
     const updateClock = (field, value) => setClocks((prev) => ({ ...prev, [field]: value }));
@@ -215,6 +206,7 @@ const RunMenuBox = ({
     // Save config to parent only when this menu box is closed (unmounted).
     // Empty dep array: the cleanup only runs on unmount, not on every local state change.
     // buildConfigPayloadRef ensures we always call the latest version on unmount.
+
     useEffect(() => {
         return () => {
             if (onConfigurationChangeRef.current) {
@@ -224,6 +216,11 @@ const RunMenuBox = ({
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleStart = () => {
+        if (isPaused && onResumeRun) {
+            onResumeRun();
+            return;
+        }
+
         const latestConfig = buildConfigPayload();
         if (currentTime === 0) {
             // New start: delegate to parent which decides if rebuild is needed.
@@ -286,7 +283,7 @@ const RunMenuBox = ({
                 <InfoTooltip title={helpText.clocks.main} />
             </Box>
 
-            <Grid container spacing={1.5} sx={{mb: 2}}>
+            <Grid container spacing={1.5} sx={{ mb: 2 }}>
                 <Grid item xs={12} sm={6} container spacing={1.5}>
                     <Grid item xs={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Elec Dt (s)" value={clocks.elec} onChange={(e) => updateClock('elec', e.target.value)} disabled={configSettings.turnOffElec} /><InfoTooltip title={helpText.clocks.elecDt} /></Box></Grid>
                     <Grid item xs={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Chem Dt (s)" value={clocks.chem} onChange={(e) => updateClock('chem', e.target.value)} /><InfoTooltip title={helpText.clocks.chemDt} /></Box></Grid>
@@ -327,7 +324,7 @@ const RunMenuBox = ({
                     </Box>
                 </Grid>
                 <Grid item xs={12} sm={6}>
-                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
                         <TextField fullWidth size="small" label="Rand Seed" type="number" value={configSettings.randSeed} onChange={(e) => updateConfigSetting('randSeed', e.target.value)} />
                         <InfoTooltip title={helpText.otherSettings.randSeed} />
                     </Box>

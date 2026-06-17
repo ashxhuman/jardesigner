@@ -666,6 +666,7 @@ class MooView:
                                             "message": "Simulation has finished."}},
                           headers={'X-Internal-Token': _INTERNAL_TOKEN},
                           timeout=2.0)
+            print("Sent simulation end notification.")
         except Exception as e:
             print(f"Warning: Could not send simulation end notification. {e}")
 

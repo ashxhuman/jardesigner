@@ -110,11 +110,14 @@ export const AppLayout = (props) => {
     getCurrentJsonData,
     getChemProtos,
     handleStartRun,
+    handlePauseRun,     // Pause handler
+    handleResumeRun,    // Resume handler
     handleResetRun,
     handleBuildAndStartRun,
     handleStopRun,
     setRunParameters,
     isSimulating,
+    isPaused,           // Pause state
     activeSim,
     liveFrameData,
     isReplaying,
@@ -161,10 +164,13 @@ export const AppLayout = (props) => {
       setRunParameters={setRunParameters}
       currentConfig={{ ...jsonData }}
       onStartRun={handleStartRun}
+      onPauseRun={handlePauseRun}      // Pass pause handler
+      onResumeRun={handleResumeRun}    // Pass resume handler
       onResetRun={handleResetRun}
       onBuildAndStartRun={handleBuildAndStartRun}
       onStopRun={handleStopRun}
       isSimulating={isSimulating}
+      isPaused={isPaused}              // Pass pause state
       activeSimPid={activeSim.pid}
       liveFrameData={liveFrameData}
       isReplaying={isReplaying}
@@ -239,7 +245,8 @@ export const AppLayout = (props) => {
     />,
   }), [
     jsonData, updateJsonData, updateJsonString, handleClearModel, getCurrentJsonData, getChemProtos,
-    handleStartRun, handleResetRun, isSimulating, activeSim.pid, liveFrameData, isReplaying,
+    handleStartRun, handlePauseRun, handleResumeRun, handleResetRun,  // Added pause handlers
+    isSimulating, isPaused, activeSim.pid, liveFrameData, isReplaying,  // Added isPaused
     handleMorphologyFileChange, 
     clientId,
     threeDConfigs,

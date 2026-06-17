@@ -54,6 +54,7 @@ def _stdin_reader():
     for line in sys.stdin:
         _cmd_queue.put(line)
 
+
 def _send_time_update_async(sim_time):
     channel_id = _sim_flags['data_channel_id']
     if not channel_id:
@@ -312,6 +313,18 @@ class JarDesigner:
         self.comptDict = {}     # dict of chem compartments
         self.meshDict = {}      # dict of neuroMesh,spineMesh,psdMesh etc
         self.meshMols = {}      # dict of meshName:[molPathTail] in each mesh
+        
+        # ================================================================
+        # BUG FIX #2: Initialize ALL attributes with defaults FIRST
+        # These attributes are now initialized BEFORE JSON loading
+        # ================================================================
+        self.passiveDistrib = []
+        self.plotNames = []
+        self.wavePlotNames = []
+        self._endos = []
+        self._finishedSaving = False
+        self._modelFileNameList = []    # Used to build NSDF files
+        
         # Construct the absolute path to the schema file
         script_dir = os.path.dirname(os.path.abspath(__file__))
         schemaFile_path = os.path.join(script_dir, schemaFile)
@@ -356,6 +369,8 @@ class JarDesigner:
             quit()
 
         #### Now we load in all the fields of the jardesigner class
+        #### If JSON contains values for passiveDistrib, plotNames, etc.,
+        #### they will naturally overwrite the defaults set above
         for key, value in data.items():
             setattr(self, key, value)
         #### Check for command line overrides of content in json file.
@@ -901,7 +916,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         if meshType == 'dend':
             mesh = moose.NeuroMesh( '/model/chem/' + chemSrc )
             mesh.geometryPolicy = 'cylinder'
-            mesh.separateSpines = 0
+            mesh.separateSpines = bool(0)
         elif meshType == 'spine':
             mesh = self.buildSpineMesh( argList, newChemId, comptDict )
         elif meshType == 'psd':
@@ -929,7 +944,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             moose.le( '/model/elec' )
             raise BuildError( "Error: buildSpineMesh: Missing parent NeuroMesh '{}' for spine '{}'".format( dendMeshName, chemSrc ) )
         #print( "COMPT DICT ============", comptDict )
-        moose.element(dendMesh).separateSpines = 1
+        moose.element(dendMesh).separateSpines = bool(1)
         mesh = moose.SpineMesh( '/model/chem/' + chemSrc )
         moose.connect( dendMesh, 'spineListOut', mesh, 'spineList' )
         return mesh
@@ -981,7 +996,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         mesh.isMembraneBound = True
         mesh.rScale = radiusRatio
         if meshType == 'endo_axial':
-            mesh.doAxialDiffusion = 1
+            mesh.doAxialDiffusion = bool(1)
             mesh.rPower = 0.5
             mesh.aPower = 0.5
             mesh.aScale = radiusRatio * radiusRatio
@@ -1839,7 +1854,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                 func = moose.Function( funcname )
                 func.expr = i['expr']
                 #func.expr = expr
-                func.doEvalAtReinit = 1
+                func.doEvalAtReinit = bool(1)
                 for q in stimObj:
                     moose.connect( func, 'valueOut', q, stimField )
                     #print( "connecting stim: ", func.path, q.path + "[", q.dataIndex, "]." + stimField )
@@ -1986,7 +2001,6 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             self.elecid = moose.loadModel( efile, '/library/' + elecname)
         else:
             nm = NeuroML()
-            print("in _loadElec, combineSegments = ", self.combineSegments)
             nm.readNeuroMLFromFile( efile, \
                     params = {'combineSegments': self.combineSegments, \
                     'createPotentialSynapses': True } )
@@ -2160,9 +2174,6 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             elecComptList = [ elec.spineFromCompartment[i.me] for i in mesh.elecComptList ]
             #elecComptList = moose.element( '/model/elec').spineIdsFromCompartmentIds[ mesh.elecComptList ]
             #elecComptList = mesh.elecComptMap
-            print( len( mesh.elecComptList ) )
-            for i,j in zip( elecComptList, mesh.elecComptList ):
-                print( "Lookup: {} {} {}; orig: {} {} {}".format( i.name, i.index, i.fieldIndex, j.name, j.index, j.fieldIndex ))
         else:
             #print("Building adapter: elecComptList '", mesh.elecComptList, "' on mesh: '", mesh.path , "' with elecRelPath = ", elecRelPath )
             elecComptList = mesh.elecComptList
@@ -2202,7 +2213,6 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             i[3].outputOffset = offset
             i[3].scale = scale
             if elecRelPath == 'spine':
-                print( "ISSPINE" )
                 # Check needed in case there were unmapped entries in 
                 # spineIdsFromCompartmentIds
                 elObj = i[0]
@@ -2213,7 +2223,6 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             else:
                 ePath = i[0].path + '/' + elecRelPath
                 #print( "EPATH = ", ePath )
-                #print( "NOT SPINE", ePath )
                 if not( moose.exists( ePath ) ):
                     print( "Error: NOT SPINE", ePath, "DOESN'T EXIST, bailing" )
                     continue
@@ -2250,15 +2259,24 @@ def randomPlacementFunc( numModels, idx ):
     nx = int( np.sqrt( numModels ) )
     return np.random.random()*0.5e-3, np.random.random()*0.5e-3, 0.0
 
+# ============================================================================
+# Pause/Resume Threading Support
+# ============================================================================
+_simulation_thread = None
+_is_paused = False
+_remaining_runtime = 0
+_target_simtime = 0
+_SIM_CHUNK_DT = 1.0
 
 def serverCommandLoop( rdes ):
     reader_thread = threading.Thread(target=_stdin_reader, daemon=True)
     reader_thread.start()
+
     while True:
         try:
             line = _cmd_queue.get()
             command_data = json.loads(line)
-            command = command_data.get("command")
+            command = command_data.get('command')
 
             if command == "start":
                 runtime = command_data.get("params", {}).get("runtime", rdes.runtime)
@@ -2283,13 +2301,6 @@ def serverCommandLoop( rdes ):
             elif command == "stop":
                 _sim_flags['stop'] = True
                 moose.stop()
-
-            elif command == "reset":
-                moose.reinit()
-
-            elif command == "quit":
-                print("Received 'quit' command. Exiting.")
-                break
             else:
                 print(f"Warning: Unknown command '{command}'")
 
@@ -2297,7 +2308,6 @@ def serverCommandLoop( rdes ):
             print(f"Warning: Received non-JSON command: {line.strip()}")
 
         sys.stdout.flush()
-
 
 
 def main():
@@ -2365,4 +2375,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
