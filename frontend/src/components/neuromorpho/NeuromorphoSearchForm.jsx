@@ -9,7 +9,7 @@ const PAGE_SIZE_OPTIONS = [20, 50, 100];
 const toItem = (n) => ({
     id:              `nm_${n.neuron_id}`,
     name:            n.neuron_name,
-    source:          `NeuroMorpho / ${n.archive || ''}`,
+    source:          `NeuroMorpho/${n.archive || ''}`,
     description:     [n.species, n.brain_region, n.cell_type].filter(Boolean).join(' '),
     source_type:     'file',
     topTen:          false,

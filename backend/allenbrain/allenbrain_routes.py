@@ -108,7 +108,7 @@ def stage_specimen(specimen_id: int, client_id: str) -> dict:
         item = {
             "id":          f"ab_{specimen_id}",
             "name":        filename.replace(".swc", ""),
-            "source":      f"AllenBrain / {_str(s.get('donor__species'))}",
+            "source":      f"AllenBrain/{_str(s.get('donor__species'))}",
             "description": " ".join(filter(None, [
                 _str(s.get("structure__name")),
                 _str(s.get("structure__layer")),

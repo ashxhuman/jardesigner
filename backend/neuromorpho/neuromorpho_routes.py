@@ -132,7 +132,7 @@ def stage_neuron(neuron_id: int, client_id: str) -> dict:
     item = {
         "id":          f"nm_{neuron_id}",
         "name":        name,
-        "source":      f"NeuroMorpho / {archive}",
+        "source":      f"NeuroMorpho/{archive}",
         "description": " ".join(filter(None, [
             _coerce(rec.get("species")),
             _coerce(rec.get("brain_region")),
