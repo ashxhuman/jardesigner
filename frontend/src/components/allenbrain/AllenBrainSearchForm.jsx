@@ -9,7 +9,7 @@ const PAGE_SIZE_OPTIONS = [20, 50, 100];
 const toItem = (s) => ({
     id:              `ab_${s.specimen__id}`,
     name:            s.specimen__name || `Specimen ${s.specimen__id}`,
-    source:          `AllenBrain / ${s.donor__species || ''}`,
+    source:          `AllenBrain/${s.donor__species || ''}`,
     description:     [s.structure__acronym, s.structure__layer, s.tag__dendrite_type].filter(Boolean).join(' · '),
     source_type:     'swc',
     topTen:          false,
