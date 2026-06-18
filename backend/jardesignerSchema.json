@@ -316,7 +316,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["builtin", "neuroml"]
+            "enum": ["builtin", "neuroml", "icg"]
           },
           "source": {
             "type": "string"
