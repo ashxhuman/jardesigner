@@ -30,6 +30,11 @@ const nonChemFieldOptions = ['inject', 'vclamp', 'activation', 'modulation'];
 const chemFieldOptions = ['conc', 'concInit', 'n', 'nInit'];
 const typeOptions = ['Field', 'Periodic Synapse', 'Random Synapse'];
 
+const defaultStimExpressions = {
+    'inject': '1e-11*(t>0.1)*(t<0.2)',
+    'vclamp': '-0.065+0.065*(t>0.1)*(t<0.2)',
+};
+
 // --- Regex to parse chem paths like "DEND/Ca[0]" ---
 const chemPathRegex = /([^/]+)\/([^[]+)(\[.*\])?/;
 
@@ -39,17 +44,20 @@ const safeToString = (value, defaultValue = '') => {
 };
 
 // --- Default state for a new stim entry ---
-const createDefaultStim = () => ({
-    path: 'soma', // Default to soma per request
-    field: nonChemFieldOptions[0],
-    chemProto: '.', 
-    childPath: '', 
-    molIndex: '',
-    geometryExpression: '1',
-    stimulusExpression: '',
-    type: typeOptions[0],
-    weight: '1.0',
-});
+const createDefaultStim = () => {
+    const field = nonChemFieldOptions[0];
+    return {
+        path: 'soma',
+        field,
+        chemProto: '.',
+        childPath: '',
+        molIndex: '',
+        geometryExpression: '1',
+        stimulusExpression: defaultStimExpressions[field] || '',
+        type: typeOptions[0],
+        weight: '1.0',
+    };
+};
 
 // --- Helper to map schema type back to component type ---
 const mapSchemaTypeToComponent = (schemaType) => {
@@ -121,7 +129,7 @@ const StimMenuBox = ({
                 childPath: initialChildPath,
                 molIndex: initialMolIndex,
                 geometryExpression: s.geomExpr || '1',
-                stimulusExpression: s.expr || '',
+                stimulusExpression: s.expr || defaultStimExpressions[field] || '',
                 type: mapSchemaTypeToComponent(s.type),
                 weight: safeToString(s.weight, '1.0'),
             };
@@ -160,7 +168,7 @@ const StimMenuBox = ({
 
                     if (key === 'field' || key === 'type') {
                         const wasChem = stim.type === 'Field' && chemFieldOptions.includes(stim.field);
-                        
+
                         if (wasChem && !isNowChem) {
                             updatedStim.chemProto = '.';
                             updatedStim.childPath = '';
@@ -169,6 +177,14 @@ const StimMenuBox = ({
                             updatedStim.chemProto = ''; // Require user selection
                             updatedStim.childPath = '';
                             updatedStim.molIndex = '';
+                        }
+                    }
+
+                    if (key === 'field') {
+                        const oldDefault = defaultStimExpressions[stim.field] || '';
+                        const newDefault = defaultStimExpressions[value] || '';
+                        if (stim.stimulusExpression === '' || stim.stimulusExpression === oldDefault) {
+                            updatedStim.stimulusExpression = newDefault;
                         }
                     }
 
