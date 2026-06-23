@@ -26,33 +26,20 @@ This document explains how to use the jardesigner GUI to build and run
 multiscale neuronal models.
 
 
-**Load-and-Run Workflow**:
+**Workflow**:
 
-1. Load models using the *File* Menu box: Either your own models, or tutorials.
+0. View this documentation file in the right-hand window, right tab.
 
-2. Run models using the *Run* Menu box
+1. Build model and input/output components using the menu items in the top bar
 
-3. View model properties and simulation output in the right-hand window, 
-under the tabs for Graph, Model Json and so on.
+2. Monitor how the jardesigner JSON file takes shape as you build the model,
+in the other tab in the right-hand window.
 
-4. Save model output by clicking on the hover-over download button in the graphs.
+3. Run the model and graph it.
 
+4. Save model
 
-**Build-and-Edit Workflow**:
-
-1. Start with the menu box for Morphology. Then add spines, channels and so on.
-
-2. In *Spines*, *Channels*, and *Signaling* there is a common pattern: You pick a set of prototypes, then distribute them over the cell.
-
-3. The GUI follows a "Refresh-to-update" pattern. Your changes are activated after you go to a new MenuBox, or close the current one.
-
-4. The current configuration of the model appears as a 3D cell and icons for various controls, in the *Setup 3D* tab of the right-hand window. It also appears in JSON format in the *Model Json* tab.
-
-5. You can go back to any MenuBox to edit values.
-
-6. Run and view simulation output, and save model output as before
-
-7. Save model using the *File* Menu box.
+5. Iterate.
 
 
 # Quick overview
