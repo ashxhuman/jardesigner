@@ -1,6 +1,7 @@
 ##############################################
 # allenbrain.py — Allen Brain Cell Types Database API client
 ##############################################
+import base64
 import io
 import re
 import zipfile
@@ -204,8 +205,10 @@ def specimen_to_details(s: dict) -> dict:
     # ── Morphology thumbnail ─────────────────────────────────────────────────
     thumb = s.get('morph_thumb_path') or ''
     if thumb:
-        file_id = thumb.rstrip('/').split('/')[-1]
-        detail['image_url'] = f"/allenbrain/thumb/{file_id}"
+        file_id = int(thumb.rstrip('/').split('/')[-1])
+        img_bytes, content_type = fetch_morph_thumb(file_id)
+        b64 = base64.b64encode(img_bytes).decode('ascii')
+        detail['image_url'] = f"data:{content_type};base64,{b64}"
 
     return detail
 

@@ -239,7 +239,7 @@ def neuron_to_details(neuron: Dict) -> Dict:
     }
 
     if neuron.get('note'):
-        detail['full_description'] = _strip_html(neuron['note'])
+        detail['notes'] = _strip_html(neuron['note'])
 
     # reference_pmid and reference_doi are parallel arrays on the neuron record
     pmids = [str(p) for p in (neuron.get('reference_pmid') or [])]

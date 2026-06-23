@@ -11,7 +11,7 @@ const toItem = (n) => ({
     name:            n.neuron_name,
     source:          `NeuroMorpho / ${n.archive || ''}`,
     description:     [n.species, n.brain_region, n.cell_type].filter(Boolean).join(' '),
-    source_type:     'file',
+    source_type:     'swc',
     topTen:          false,
     server_file:     `nm_${n.neuron_id}`,
     staged_filename: `nm_${n.neuron_id}`,

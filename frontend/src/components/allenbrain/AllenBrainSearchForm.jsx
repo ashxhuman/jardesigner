@@ -11,7 +11,7 @@ const toItem = (s) => ({
     name:            s.specimen__name || `Specimen ${s.specimen__id}`,
     source:          `AllenBrain / ${s.donor__species || ''}`,
     description:     [s.structure__acronym, s.structure__layer, s.tag__dendrite_type].filter(Boolean).join(' · '),
-    source_type:     'file',
+    source_type:     'swc',
     topTen:          false,
     server_file:     `ab_${s.specimen__id}`,
     staged_filename: `ab_${s.specimen__id}`,

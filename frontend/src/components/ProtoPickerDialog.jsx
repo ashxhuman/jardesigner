@@ -51,9 +51,8 @@ const sourceTypeFromFile = (filename, type) => {
 };
 
 // --- Detail renderer: data-source-specific layout ---
-const DetailRenderer = ({ item, detail, baseUrl = '' }) => {
+const DetailRenderer = ({ item, detail }) => {
     const d = detail || {};
-    const resolveUrl = (url) => url && url.startsWith('/') ? `${baseUrl}${url}` : url;
     return (
         <Box>
             <Box sx={{ mb: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
@@ -113,7 +112,7 @@ const DetailRenderer = ({ item, detail, baseUrl = '' }) => {
                 <Box sx={{ mb: 2 }}>
                     <Typography variant="subtitle2" color="primary" gutterBottom>Preview</Typography>
                     <img
-                        src={resolveUrl(d.image_url)}
+                        src={d.image_url}
                         alt={item.name}
                         style={{ maxWidth: '100%', border: '1px solid #e0e0e0', borderRadius: 4 }}
                     />
@@ -124,21 +123,16 @@ const DetailRenderer = ({ item, detail, baseUrl = '' }) => {
                 <Box sx={{ mb: 2 }}>
                     <Typography variant="subtitle2" color="primary" gutterBottom>References</Typography>
                     {d.references.map((ref, i) => (
-                        <Box key={i} sx={{ mb: 1 }}>
-                            <Typography variant="body2">{ref.text}</Typography>
-                            <Box sx={{ display: 'flex', gap: 1, mt: 0.25 }}>
-                                {ref.url && (
-                                    <a href={ref.url} target="_blank" rel="noreferrer" style={{ color: '#1976d2', fontSize: '0.75rem' }}>
-                                        DOI
+                        <Typography key={i} variant="body2" sx={{ mb: 0.5 }}>
+                            {ref.text}
+                            {ref.url && (
+                                <> {' '}
+                                    <a href={ref.url} target="_blank" rel="noreferrer" style={{ color: '#1976d2' }}>
+                                        Link
                                     </a>
-                                )}
-                                {ref.pmid && (
-                                    <a href={`https://pubmed.ncbi.nlm.nih.gov/${ref.pmid}/`} target="_blank" rel="noreferrer" style={{ color: '#1976d2', fontSize: '0.75rem' }}>
-                                        PMID: {ref.pmid}
-                                    </a>
-                                )}
-                            </Box>
-                        </Box>
+                                </>
+                            )}
+                        </Typography>
                     ))}
                 </Box>
             )}
@@ -150,7 +144,7 @@ const DetailRenderer = ({ item, detail, baseUrl = '' }) => {
                 </Box>
             )}
 
-            {!d.fields && !d.full_description && !d.parameters && !d.references && !d.notes && !d.image_url && (
+            {!d.fields?.length && !d.full_description && !d.parameters && !d.references && !d.notes && !d.image_url && (
                 <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
                     No additional details available.
                 </Typography>
@@ -257,6 +251,14 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
             .finally(() => setLoading(false));
     }, [open, type]);
 
+    useEffect(() => {
+        setSearchResults(null);
+        setSearchQuery('');
+        setDetailItem(null);
+        setDetailData(null);
+        setStagingError(null);
+    }, [selectedDb]);
+
     const handleSearch = useCallback(async () => {
         if (!searchQuery.trim()) {
             setSearchResults(null);
@@ -274,14 +276,6 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
             setLoading(false);
         }
     }, [searchQuery, selectedDb, type, baseUrl]);
-
-    useEffect(() => {
-        setSearchResults(null);
-        setSearchQuery('');
-        setDetailItem(null);
-        setDetailData(null);
-        setStagingError(null);
-    }, [selectedDb]);
 
     const handleOpenDetail = useCallback(async (item) => {
         if (detailItem?.id === item.id) {
@@ -305,7 +299,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
 
     const handleSelect = useCallback(async (item) => {
         const needsStaging = item.server_file && clientId &&
-            ['file', 'kkit', 'sbml', 'neuroml'].includes(item.source_type);
+            ['file', 'swc', 'kkit', 'sbml', 'neuroml'].includes(item.source_type);
 
         setStagingError(null);
 
@@ -444,7 +438,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                     )}
                 </Box>
 
-                {/* Table + Detail panel — always visible */}
+                {/* Table + Detail panel */}
                 <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                     {/* Table */}
                     <Box sx={{ flex: detailItem ? '0 0 58%' : '1 1 100%', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'flex-basis 0.15s' }}>
@@ -460,7 +454,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                         {(loading || staging || uploading) ? (
                             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 6 }}>
                                 <CircularProgress />
-                                {staging && <Typography sx={{ ml: 2 }}>Downloading file…</Typography>}
+                                {staging && <Typography sx={{ ml: 2 }}>Loading file…</Typography>}
                                 {uploading && <Typography sx={{ ml: 2 }}>Uploading…</Typography>}
                             </Box>
                         ) : (
@@ -539,7 +533,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                                     <CircularProgress size={24} />
                                 </Box>
                             ) : (
-                                <DetailRenderer item={detailItem} detail={detailData} baseUrl={baseUrl} />
+                                <DetailRenderer item={detailItem} detail={detailData} />
                             )}
                         </Box>
                     )}

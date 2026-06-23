@@ -255,15 +255,9 @@ def get_proto_digest(proto_type):
 @app.route('/proto_detail/<proto_id>', methods=['GET'])
 def get_proto_detail(proto_id):
     if proto_id.startswith('nm_'):
-        cache = _nm_cache_load()
-        if proto_id in cache:
-            return jsonify(cache[proto_id]['details'])
         try:
             neuron = _nm_fetch_by_id(int(proto_id[3:]))
-            item = _nm_to_item(neuron)
-            cache[proto_id] = item
-            _nm_cache_save(cache)
-            return jsonify(item['details'])
+            return jsonify(_nm_to_item(neuron)['details'])
         except Exception:
             return jsonify({})
 
