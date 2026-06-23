@@ -1,5 +1,6 @@
-import eventlet
-eventlet.monkey_patch()
+from gevent import monkey
+monkey.patch_all()
+
 import os
 import sys
 import subprocess
@@ -31,13 +32,20 @@ app = Flask(__name__)
 CORS(app)
 
 # Quiet logging
-socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
+socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False, async_mode='gevent')
 
-from neuromorpho.neuromorpho_routes import neuromorpho_routes
+from extensions import run_async
+from neuromorpho.neuromorpho_routes import neuromorpho_routes, stage_neuron as nm_stage
+from neuromorpho.neuromorpho import search_neurons as nm_search_neurons, fetch_neuron_by_id as nm_fetch_neuron_id, neuron_to_item as nm_to_item
 app.register_blueprint(neuromorpho_routes, url_prefix="/neuromorpho")
 
-from allenbrain.allenbrain_routes import allenbrain_routes
+from allenbrain.allenbrain_routes import allenbrain_routes, stage_specimen as ab_stage
+from allenbrain.allenbrain import fetch_specimen_by_id as ab_fetch_by_id, specimen_to_details as ab_to_details
 app.register_blueprint(allenbrain_routes, url_prefix="/allenbrain")
+
+from icg_database.icg_routes import icg_routes, get_channel_detail as icg_get_channel_detail, stage_channel as icg_stage
+app.register_blueprint(icg_routes, url_prefix="/icg")
+
 
 # --- Store running process and session info ---
 running_processes = {}
@@ -217,6 +225,22 @@ def handle_sim_command(data):
 PROTO_REGISTRY_DIR = os.path.join(BASE_DIR, 'proto_registry')
 _ALLOWED_STAGING_DIRS = {'CELL_MODELS', 'CHEM_MODELS', 'CHAN_MODELS'}
 
+_NM_ITEM_CACHE = os.path.join(BASE_DIR, 'data', 'neuromorpho', 'item_cache.json')
+
+def _nm_cache_load():
+    if os.path.exists(_NM_ITEM_CACHE):
+        try:
+            return json.loads(open(_NM_ITEM_CACHE).read())
+        except Exception:
+            return {}
+    return {}
+
+def _nm_cache_save(cache):
+    os.makedirs(os.path.dirname(_NM_ITEM_CACHE), exist_ok=True)
+    with open(_NM_ITEM_CACHE, 'w') as f:
+        json.dump(cache, f, indent=2)
+
+
 def _load_registry(proto_type):
     path = os.path.join(PROTO_REGISTRY_DIR, f'{proto_type}_protos.json')
     if not os.path.exists(path):
@@ -235,6 +259,36 @@ def get_proto_digest(proto_type):
 
 @app.route('/proto_detail/<proto_id>', methods=['GET'])
 def get_proto_detail(proto_id):
+    if proto_id.startswith('nm_'):
+        cache = _nm_cache_load()
+        if proto_id in cache:
+            return jsonify(cache[proto_id]['details'])
+        try:
+            neuron = run_async(nm_fetch_neuron_id(int(proto_id[3:])))
+            item   = run_async(nm_to_item(neuron))
+            cache[proto_id] = item
+            _nm_cache_save(cache)
+            return jsonify(item['details'])
+        except Exception:
+            return jsonify({})
+
+    if proto_id.startswith('ab_'):
+        try:
+            specimen = run_async(ab_fetch_by_id(int(proto_id[3:])))
+            return jsonify(ab_to_details(specimen))
+        except Exception:
+            return jsonify({})
+
+    if proto_id.startswith('icg_'):
+        # id format: icg_{modeldb_id}_{suffix}  e.g.  icg_12345_Na_mit_usb
+        m = re.match(r'^icg_(\d+)_(.+)$', proto_id)
+        if m:
+            try:
+                return jsonify(icg_get_channel_detail(int(m.group(1)), m.group(2)))
+            except Exception:
+                pass
+        return jsonify({})
+
     for proto_type in ('morpho', 'chan', 'chem'):
         data = _load_registry(proto_type)
         if data:
@@ -247,7 +301,19 @@ def get_proto_detail(proto_id):
 def search_protos(proto_type):
     if proto_type not in ('morpho', 'chan', 'chem'):
         return jsonify({'error': 'Invalid type'}), 400
-    q = request.args.get('q', '').lower().strip()
+    q  = request.args.get('q', '').lower().strip()
+    db = request.args.get('db', 'Local')
+
+    if db == 'NeuroMorpho' and proto_type == 'morpho':
+        try:
+            raw     = run_async(nm_search_neurons(size=50))
+            neurons = raw.get('_embedded', {}).get('neuronResources', [])
+            import asyncio
+            items   = run_async(asyncio.gather(*[nm_to_item(n) for n in neurons]))
+            return jsonify({'items': list(items)})
+        except Exception as e:
+            return jsonify({'error': str(e), 'items': []}), 500
+
     data = _load_registry(proto_type)
     if data is None:
         return jsonify({'items': []})
@@ -266,6 +332,28 @@ def stage_proto_file(proto_id, client_id):
     """Copy a server-side proto file into the user's uploads directory."""
     if not _is_safe_client_id(client_id):
         return jsonify({'error': 'Invalid client_id'}), 400
+
+    if proto_id.startswith('nm_'):
+        try:
+            return jsonify(nm_stage(int(proto_id[3:]), client_id))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    if proto_id.startswith('ab_'):
+        try:
+            return jsonify(ab_stage(int(proto_id[3:]), client_id))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    if proto_id.startswith('icg_'):
+        m = re.match(r'^icg_(\d+)_(.+)$', proto_id)
+        if not m:
+            return jsonify({'error': 'Invalid ICG proto ID'}), 400
+        try:
+            return jsonify(icg_stage(int(m.group(1)), m.group(2), client_id))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     for proto_type in ('morpho', 'chan', 'chem'):
         data = _load_registry(proto_type)
         if data:
@@ -672,6 +760,8 @@ def get_session_file(client_id, filename):
     if not _is_safe_client_id(client_id) or '..' in filename or filename.startswith('/'):
         return jsonify({"status": "error", "message": "Invalid path."}), 400
     session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
+    if filename == 'user_registry.json' and not os.path.isfile(os.path.join(session_dir, filename)):
+        return jsonify({"morpho": {"items": []}, "chan": {"items": []}, "chem": {"items": []}})
     return send_from_directory(session_dir, filename)
 
 @app.route('/reset_simulation', methods=['POST'])

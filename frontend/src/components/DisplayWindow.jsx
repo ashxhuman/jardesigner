@@ -33,6 +33,7 @@ const DisplayWindow = (props) => {
     handleSeekReplay,
     clientId,
     isSimulating,
+    liveGraphData,
     reactionGraphs
   } = props;
 
@@ -81,7 +82,7 @@ const DisplayWindow = (props) => {
   const onSceneBuiltRun = useCallback((bbox) => onSceneBuilt('run', bbox), [onSceneBuilt]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#f5f5f5', borderRadius: '8px', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: 'background.paper', overflow: 'hidden' }}>
       <Box sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
         <Tabs value={tabIndex} onChange={handleTabChange} aria-label="display window tabs">
           <Tab label="Graph" />
@@ -95,15 +96,21 @@ const DisplayWindow = (props) => {
 
       {/* ... (Keep existing TabPanels 0-4) ... */}
 
-      <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 1, display: tabIndex === 0 ? 'flex' : 'none' }}>
-        <MemoizedGraphWindow plotDataUrl={plotDataUrl} isPlotReady={isPlotReady} plotError={plotError} />
+      <Box sx={{ flexGrow: 1, overflow: 'hidden', display: tabIndex === 0 ? 'flex' : 'none', flexDirection: 'column' }}>
+        <MemoizedGraphWindow
+          liveGraphData={liveGraphData}
+          plotDataUrl={plotDataUrl}
+          isPlotReady={isPlotReady}
+          plotError={plotError}
+          isSimulating={isSimulating}
+        />
       </Box>
 
-      <Box sx={{ flexGrow: 1, overflowY: 'auto', display: tabIndex === 1 ? 'block' : 'none' }}>
-        <MemoizedJsonText jsonString={jsonContent} setActiveMenu={setActiveMenu} />
+      <Box sx={{ flexGrow: 1, overflowY: 'auto', display: tabIndex === 1 ? 'block' : 'none', animation: tabIndex === 1 ? 'panelFadeIn 0.18s ease' : 'none' }}>
+        <MemoizedJsonText jsonString={jsonContent} />
       </Box>
 
-      <Box sx={{ flexGrow: 1, overflowY: 'auto', display: tabIndex === 2 ? 'block' : 'none' }}>
+      <Box sx={{ flexGrow: 1, overflowY: 'auto', display: tabIndex === 2 ? 'block' : 'none', animation: tabIndex === 2 ? 'panelFadeIn 0.18s ease' : 'none' }}>
         <MemoizedMarkdownText />
       </Box>
       
@@ -152,7 +159,7 @@ const DisplayWindow = (props) => {
       </Box>
 
       {/* 2. REACTION GRAPH PANEL (Tab Index 5) */}
-      <Box sx={{ flexGrow: 1, overflow: 'hidden', display: tabIndex === 5 ? 'flex' : 'none', position: 'relative' }}>
+      <Box sx={{ flexGrow: 1, overflow: 'hidden', display: tabIndex === 5 ? 'flex' : 'none', position: 'relative', animation: tabIndex === 5 ? 'panelFadeIn 0.18s ease' : 'none' }}>
          <MemoizedReactionGraph 
              // Pass the Setup graph data specifically
              graphData={reactionGraphs?.setup} 

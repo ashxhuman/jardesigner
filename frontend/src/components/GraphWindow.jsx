@@ -1,5 +1,6 @@
 import React, { memo, useState, useEffect, useMemo, useRef } from 'react';
-import { Box, Typography, Alert, CircularProgress } from '@mui/material';
+import { Box, Typography, Alert, CircularProgress, Grid2 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import LandingGraphic from '../assets/LandingGraphic.png';
 import Plot from 'react-plotly.js';
 
@@ -69,6 +70,13 @@ const downloadCSV = (plotData) => {
 // --- Sub-component: Single Plot ---
 const SinglePlot = ({ plotData }) => {
   const { ref, width, height } = useContainerSize();
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
+  const textColor  = theme.palette.text.primary;
+  const gridColor  = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.10)';
+  const lineColor  = isDark ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.25)';
+  const legendBg   = isDark ? 'rgba(22,27,34,0.85)' : 'rgba(255,255,255,0.85)';
 
   // Legend visibility — default on when there are multiple sub-plots
   const [showLegend, setShowLegend] = useState(() => plotData?.numSubPlots > 1);
@@ -99,54 +107,47 @@ const SinglePlot = ({ plotData }) => {
       line: { width: 3 }
     }));
 
-    // Layout Config
+    const axisCommon = {
+      tickfont: { size: 11, color: textColor },
+      titlefont: { size: 12, color: textColor },
+      ticks: 'outside',
+      ticklen: 4,
+      tickwidth: 1,
+      showline: true,
+      linewidth: 1,
+      linecolor: lineColor,
+      gridcolor: gridColor,
+      zerolinecolor: lineColor,
+      automargin: true,
+      zeroline: true,
+      color: textColor,
+    };
+
     const layout = {
-      // Explicitly set dimensions to match container
       width: width,
       height: height,
       title: {
           text: plotData.title,
-          font: { size: 28, weight: 'bold' }
+          font: { size: 13, weight: 600, color: textColor }
       },
-      xaxis: {
-        title: {
-            text: plotData.xlabel,
-            font: { size: 28 }
-        },
-        tickfont: { size: 24 },
-        ticks: 'outside',
-        ticklen: 8,
-        tickwidth: 2,
-        showline: true,
-        linewidth: 2,
-        automargin: true,
-        zeroline: true,
-      },
-      yaxis: {
-        title: {
-            text: plotData.ylabel,
-            font: { size: 28 }
-        },
-        tickfont: { size: 24 },
-        ticks: 'outside',
-        ticklen: 8,
-        tickwidth: 2,
-        showline: true,
-        linewidth: 2,
-        automargin: true,
-        zeroline: true,
-      },
-      font: { family: 'Arial, sans-serif', size: 20 },
-      margin: { l: 80, r: 40, b: 80, t: 60 },
+      xaxis: { ...axisCommon, title: { text: plotData.xlabel, font: { size: 12, color: textColor } } },
+      yaxis: { ...axisCommon, title: { text: plotData.ylabel, font: { size: 12, color: textColor } } },
+      font: { family: "'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", size: 11, color: textColor },
+      margin: { l: 60, r: 20, b: 50, t: 36 },
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
       showlegend: showLegend,
-      autosize: false, // We handle sizing manually
+      autosize: false,
       legend: {
-          font: { size: 20 }
+          font: { size: 11, color: textColor },
+          bgcolor: legendBg,
+          bordercolor: lineColor,
+          borderwidth: 1,
       }
     };
 
     return { traces, layout };
-  }, [plotData, width, height, showLegend]);
+  }, [plotData, width, height, showLegend, textColor, gridColor, lineColor, legendBg]);
 
   const config = useMemo(() => ({
       responsive: false, // Turned off because we are handling it manually
@@ -188,7 +189,7 @@ const SinglePlot = ({ plotData }) => {
   );
 };
 
-const GraphWindow = memo(({ plotDataUrl, isPlotReady, plotError }) => {
+const GraphWindow = memo(({ plotDataUrl, isPlotReady, plotError, liveGraphData, isSimulating }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState(null);
@@ -216,90 +217,64 @@ const GraphWindow = memo(({ plotDataUrl, isPlotReady, plotError }) => {
     }
   }, [isPlotReady, plotDataUrl]);
 
-  // CSS Grid Layout
+  // completed data takes priority; fall back to live streaming data
+  const displayData = data ?? liveGraphData;
+
   const gridStyle = useMemo(() => {
-      if (!data) return {};
+      if (!displayData) return {};
+      const nc = displayData.ncols ?? Math.ceil(Math.sqrt(displayData.plots.length));
+      const nr = displayData.nrows ?? Math.ceil(displayData.plots.length / nc);
       return {
           display: 'grid',
-          // Use minmax(0, 1fr) to force strict size containment
-          gridTemplateColumns: `repeat(${data.ncols}, minmax(0, 1fr))`,
-          gridTemplateRows: `repeat(${data.nrows}, minmax(0, 1fr))`,
+          gridTemplateColumns: `repeat(${nc}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${nr}, minmax(0, 1fr))`,
           gap: '15px',
           height: '90%',
           width: '100%',
           padding: '10px',
           boxSizing: 'border-box',
-          overflow: 'hidden' // Ensure nothing spills out
+          overflow: 'hidden',
       };
-  }, [data]);
+  }, [displayData]);
+
+  const hasError = plotError || fetchError;
 
   return (
-    <Box
-      style={{
-        height: '100%',
-        width: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden' // Parent container must also clip overflow
-      }}
-    >
+    <Box sx={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'background.default' }}>
       <style>{plotlyIconStyle}</style>
-      
-      <Typography variant="h6" gutterBottom sx={{ flexShrink: 0, px: 2, pt: 1 }}>
-        Graph Display
+
+      <Typography variant="h6" sx={{ flexShrink: 0, px: 2, pt: 1, pb: 0.5 }}>
+        {isSimulating ? 'Live Graph' : 'Graph Display'}
       </Typography>
 
-      {(plotError || fetchError) && (
-        <Alert severity="error" sx={{ mb: 2, mx: 2, flexShrink: 0 }}>
+      {hasError && (
+        <Alert severity="error" sx={{ mb: 1, flexShrink: 0 }}>
           Error: {plotError || fetchError}
         </Alert>
       )}
 
-      <Box
-        sx={{
-          flexGrow: 1,
-          background: '#fff',
-          borderRadius: '4px',
-          overflow: 'hidden',
-          minHeight: 0, // Flex item fix
-          position: 'relative',
-        }}
-      >
-        {isPlotReady && data && !loading && (
-             <div style={gridStyle}>
-                {data.plots.map((plot, index) => (
-                    <Box key={index} sx={{ 
-                        width: '100%', 
-                        height: '100%', 
-                        border: '1px solid #ddd', 
-                        borderRadius: '4px',
-                        overflow: 'hidden',
-                        position: 'relative'
-                    }}>
-                        <SinglePlot plotData={plot} />
-                    </Box>
-                ))}
-             </div>
+      <Box sx={{ flexGrow: 1, bgcolor: 'background.default', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
+        {displayData && !loading && (
+          <div style={gridStyle}>
+            {displayData.plots.map((plot, index) => (
+              <Box key={index} sx={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
+                <SinglePlot plotData={plot} />
+              </Box>
+            ))}
+          </div>
         )}
 
         {loading && (
-             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', width: '100%' }}>
-                 <CircularProgress sx={{ mb: 2 }}/>
-                 <Typography>Loading plot data...</Typography>
-             </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', width: '100%' }}>
+            <CircularProgress sx={{ mb: 2 }} />
+            <Typography color="text.secondary">Loading plot data...</Typography>
+          </Box>
         )}
 
-        {!isPlotReady && !plotError && !loading && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%' }}>
-            <img
-              src={LandingGraphic}
-              alt="Jardesigner Landing Graphic"
-              style={{
-                objectFit: 'contain',
-                maxWidth: '80%',
-                maxHeight: '80%',
-              }}
-            />
+        {!displayData && !hasError && !loading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%', bgcolor: 'background.default' }}>
+            <img src={LandingGraphic} alt="Jardesigner Landing Graphic"
+              style={{ objectFit: 'contain', maxWidth: '90%', maxHeight: '90%' }} />
           </Box>
         )}
       </Box>

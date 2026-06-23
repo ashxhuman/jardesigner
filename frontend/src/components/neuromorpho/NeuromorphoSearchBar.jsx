@@ -7,7 +7,6 @@ import {
   CircularProgress,
 } from '@mui/material';
 
-const BASE = 'http://localhost:5000/neuromorpho';
 
 const PRIORITY_SPECIES = ['rat', 'mouse'];
 
@@ -26,7 +25,7 @@ function toTitleCase(str) {
   return str.toLowerCase().split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
-export default function NeuromorphoSearchBar({ onSearch, loading }) {
+export default function NeuromorphoSearchBar({ onSearch, onClear, loading, baseUrl = 'http://localhost:5000' }) {
   const [species, setSpecies] = useState(null);
   const [brainRegion, setBrainRegion] = useState(null);
   const [cellType, setCellType] = useState(null);
@@ -36,13 +35,13 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
   const [metadataOptions, setMetadataOptions] = useState({ brain_region: [], cell_type: [], archive: [] });
   const [metaLoading, setMetaLoading] = useState(false);
 
-  // Load species on mount
+  // Load species on mount (re-runs if baseUrl changes)
   useEffect(() => {
-    fetch(`${BASE}/`)
+    fetch(`${baseUrl}/neuromorpho/`)
       .then((r) => r.json())
       .then((d) => setSpeciesList(sortSpecies(d.species || [])))
       .catch(console.error);
-  }, []);
+  }, [baseUrl]);
 
   // Load brain regions + cell types when species changes
   useEffect(() => {
@@ -54,7 +53,7 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
       return;
     }
     setMetaLoading(true);
-    fetch(`${BASE}/metadata?species=${encodeURIComponent(species)}`)
+    fetch(`${baseUrl}/neuromorpho/metadata?species=${encodeURIComponent(species)}`)
       .then((r) => {
         if (!r.ok) {
           return r.json().then((d) => { throw new Error(d.error || `HTTP ${r.status}`); });
@@ -76,11 +75,19 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
         setMetadataOptions({ brain_region: [], cell_type: [], archive: [] });
       })
       .finally(() => setMetaLoading(false));
-  }, [species]);
+  }, [species, baseUrl]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     onSearch({ species, brain_region: brainRegion || '', cell_type: cellType || '', archive: archive || '' });
+  };
+
+  const handleClear = () => {
+    setSpecies(null);
+    setBrainRegion(null);
+    setCellType(null);
+    setArchive(null);
+    if (onClear) onClear();
   };
 
   return (
@@ -88,21 +95,23 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
       <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
         {/* Species */}
         <Autocomplete
-          sx={{ width: 300 }}
+          size="small"
+          sx={{ width: 200 }}
           options={speciesList}
           value={species}
           onChange={(_, val) => setSpecies(val)}
           getOptionLabel={(opt) => toTitleCase(opt)}
           disabled={loading}
           renderInput={(params) => (
-            <TextField {...params} label="Species" variant="outlined" />
+            <TextField {...params} label="Species" size="small" variant="outlined" />
           )}
         />
 
         {/* Brain Region — only shown after species selected */}
         {species && (
           <Autocomplete
-            sx={{ width: 300 }}
+            size="small"
+            sx={{ width: 200 }}
             options={metadataOptions.brain_region}
             value={brainRegion}
             onChange={(_, val) => setBrainRegion(val)}
@@ -112,12 +121,13 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
               <TextField
                 {...params}
                 label="Brain Region"
+                size="small"
                 variant="outlined"
                 InputProps={{
                   ...params.InputProps,
                   endAdornment: (
                     <>
-                      {metaLoading ? <CircularProgress size={16} sx={{ mr: 1 }} /> : null}
+                      {metaLoading ? <CircularProgress size={14} sx={{ mr: 1 }} /> : null}
                       {params.InputProps.endAdornment}
                     </>
                   ),
@@ -130,14 +140,15 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
         {/* Cell Type — only shown after species selected */}
         {species && (
           <Autocomplete
-            sx={{ width: 300 }}
+            size="small"
+            sx={{ width: 200 }}
             options={metadataOptions.cell_type}
             value={cellType}
             onChange={(_, val) => setCellType(val)}
             disabled={loading || metaLoading}
             loading={metaLoading}
             renderInput={(params) => (
-              <TextField {...params} label="Cell Type" variant="outlined" />
+              <TextField {...params} label="Cell Type" size="small" variant="outlined" />
             )}
           />
         )}
@@ -145,21 +156,27 @@ export default function NeuromorphoSearchBar({ onSearch, loading }) {
         {/* Archive — only shown after species selected */}
         {species && (
           <Autocomplete
-            sx={{ width: 300 }}
+            size="small"
+            sx={{ width: 160 }}
             options={metadataOptions.archive}
             value={archive}
             onChange={(_, val) => setArchive(val)}
             disabled={loading || metaLoading}
             loading={metaLoading}
             renderInput={(params) => (
-              <TextField {...params} label="Archive" variant="outlined" />
+              <TextField {...params} label="Archive" size="small" variant="outlined" />
             )}
           />
         )}
 
-        <Button type="submit" variant="contained" disabled={loading || !species}>
+        <Button size="medium" type="submit" variant="contained" disabled={loading || !species}>
           Search
         </Button>
+        {species && (
+          <Button size="medium" variant="text" onClick={handleClear} disabled={loading}>
+            Clear
+          </Button>
+        )}
       </Box>
     </form>
   );

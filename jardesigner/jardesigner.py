@@ -39,6 +39,7 @@ from . import fixXreacs
 
 from moose.neuroml.NeuroML import NeuroML
 from moose.neuroml.ChannelML import ChannelML
+from moose import channels
 from . import context
 
 _cmd_queue = queue.Queue()
@@ -49,6 +50,10 @@ _sim_flags = {
 }
 _STATUS_URL   = "http://127.0.0.1:5000/internal/push_data"
 _STATUS_TOKEN = os.environ.get('JARDESIGNER_INTERNAL_TOKEN', '')
+
+# Live plot streaming state
+_rdes_ref = None
+_last_plot_sent_idx = 0
 
 def _stdin_reader():
     for line in sys.stdin:
@@ -66,6 +71,50 @@ def _send_time_update_async(sim_time):
                                             "currentTime": sim_time}},
                           headers={'X-Internal-Token': _STATUS_TOKEN},
                           timeout=1.0)
+        except Exception:
+            pass
+    threading.Thread(target=_post, daemon=True).start()
+
+def _send_live_plot_async(sim_time):
+    global _last_plot_sent_idx
+    channel_id = _sim_flags['data_channel_id']
+    if not channel_id or _rdes_ref is None or not _rdes_ref.plotNames:
+        return
+    plots = []
+    new_end_idx = 0
+    for pp in _rdes_ref.plotNames:
+        try:
+            vtab = moose.vec(pp[0])
+            if len(vtab) == 0:
+                continue
+            full_len = len(vtab[0].vector)
+            new_end_idx = max(new_end_idx, full_len)
+            new_vals = [(vtab[j].vector[_last_plot_sent_idx:full_len] * pp[3]).tolist()
+                        for j in range(len(vtab))]
+            if any(len(v) > 0 for v in new_vals):
+                plots.append({
+                    'title': pp[1],
+                    'ylabel': pp[4],
+                    'dt': float(vtab[0].dt),
+                    'startIdx': _last_plot_sent_idx,
+                    'val': new_vals,
+                })
+        except Exception:
+            pass
+    if not plots:
+        return
+    _last_plot_sent_idx = new_end_idx
+    payload = {
+        'type': 'plot_live_update',
+        'currentTime': sim_time,
+        'plots': plots,
+    }
+    def _post():
+        try:
+            requests.post(_STATUS_URL,
+                          json={"data_channel_id": channel_id, "payload": payload},
+                          headers={'X-Internal-Token': _STATUS_TOKEN},
+                          timeout=2.0)
         except Exception:
             pass
     threading.Thread(target=_post, daemon=True).start()
@@ -88,11 +137,13 @@ def _pyrun_check():
             _cmd_queue.put(line)
     except queue.Empty:
         pass
-    # Wallclock-gated time update: at most one every 0.5 s
+    # Wallclock-gated update: at most one every 0.5 s
     now = time.time()
     if now - _sim_flags['last_status_wallclock'] >= 0.5:
         _sim_flags['last_status_wallclock'] = now
-        _send_time_update_async(moose.element('/clock').currentTime)
+        sim_time = moose.element('/clock').currentTime
+        _send_time_update_async(sim_time)
+        _send_live_plot_async(sim_time)
 
 knownFieldInfo = {
     'Vm': {'fieldScale': 1000, 'dataUnits': 'mV', 
@@ -721,6 +772,14 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                     if chanName != cp['name']:
                         chan = moose.element( '/library/' + chanName )
                         chan.name = cp['name']
+                elif ctype == 'icg':
+                    suffix, modeldb_id = cp['source'].rsplit( '_', 1 )
+                    proto = channels.make_prototype(
+                                modeldb_id=int( modeldb_id ),
+                                suffix=suffix,
+                                temperature=self.temperature,
+                            )
+                    proto.name = cp['name']
 
     def buildChemProto( self ):
         if hasattr( self, "chemProto" ):
@@ -2284,6 +2343,8 @@ def _run_simulation(rdes, runtime):
         rdes.runMooView.notifySimulationEnd(rdes.dataChannelId)
 
 def serverCommandLoop( rdes ):
+    global _rdes_ref
+    _rdes_ref = rdes
     reader_thread = threading.Thread(target=_stdin_reader, daemon=True)
     reader_thread.start()
     while True:
@@ -2293,6 +2354,8 @@ def serverCommandLoop( rdes ):
             command = command_data.get("command")
 
             if command == "start":
+                global _last_plot_sent_idx
+                _last_plot_sent_idx = 0
                 runtime = command_data.get("params", {}).get("runtime", rdes.runtime)
                 _sim_flags['stop'] = False
                 _sim_flags['reset_pending'] = False

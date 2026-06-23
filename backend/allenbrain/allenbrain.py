@@ -5,9 +5,8 @@ import io
 import re
 import zipfile
 
-import requests
+import httpx
 
-# Characters that have syntactic meaning in RMA filter expressions
 _RMA_UNSAFE = re.compile(r"['\[\],]")
 
 _API_BASE         = "http://api.brain-map.org"
@@ -18,7 +17,7 @@ _QUERY_TIMEOUT    = 30
 _DOWNLOAD_TIMEOUT = 60
 
 
-def _rma_query(model: str, criteria: str = "", include: str = "", num_rows: str = "all") -> list:
+async def _rma_query(model: str, criteria: str = "", include: str = "", num_rows: str = "all") -> list:
     rma = f"model::{model}"
     if criteria:
         rma += f",rma::criteria,{criteria}"
@@ -26,7 +25,8 @@ def _rma_query(model: str, criteria: str = "", include: str = "", num_rows: str 
         rma += f",rma::include,{include}"
     rma += f",rma::options[num_rows$eq{num_rows}]"
 
-    resp = requests.get(_RMA_URL, params={"criteria": rma}, timeout=_QUERY_TIMEOUT)
+    async with httpx.AsyncClient(timeout=_QUERY_TIMEOUT) as client:
+        resp = await client.get(_RMA_URL, params={"criteria": rma})
     resp.raise_for_status()
     data = resp.json()
     if not data.get("success"):
@@ -34,10 +34,7 @@ def _rma_query(model: str, criteria: str = "", include: str = "", num_rows: str 
     return data.get("msg", [])
 
 
-# ── Filter / search helpers ───────────────────────────────────────────────────
-
 def _safe_filter_value(value: str) -> str:
-    """Reject strings containing RMA metacharacters to prevent query injection."""
     if _RMA_UNSAFE.search(value):
         raise ValueError(f"Invalid filter value: {value!r}")
     return value
@@ -47,23 +44,8 @@ def _unique_sorted(rows, key):
     return sorted({r[key] for r in rows if r.get(key)})
 
 
-def fetch_filter_options() -> dict:
-    """Return global morphology annotation filter options."""
-    rows = _rma_query(
-        "ApiCellTypesSpecimenDetail",
-        criteria="[nr__reconstruction_type$nenull]",
-        num_rows="all",
-    )
-    return {
-        "dendrite_types":       _unique_sorted(rows, "tag__dendrite_type"),
-        "apical":               _unique_sorted(rows, "tag__apical"),
-        "reconstruction_types": _unique_sorted(rows, "nr__reconstruction_type"),
-    }
-
-
-def fetch_species_options(species: str) -> dict:
-    """Return brain areas, layers, and transgenic lines for a species."""
-    rows = _rma_query(
+async def fetch_species_options(species: str) -> dict:
+    rows = await _rma_query(
         "ApiCellTypesSpecimenDetail",
         criteria=f"[nr__reconstruction_type$nenull][donor__species$il'{species}']",
         num_rows="all",
@@ -105,49 +87,22 @@ def fetch_species_options(species: str) -> dict:
     }
 
 
-def search_neurons(
+async def search_neurons(
     species=None,
-    sex=None,
-    disease_state=None,
     brain_area_acronym=None,
     brain_area_parent_acronym=None,
     layer=None,
-    hemisphere=None,
-    dendrite_type=None,
-    apical=None,
-    reconstruction_type=None,
-    reporter_status=None,
     line_name=None,
     page=0,
     size=20,
 ) -> dict:
-    """Search for neurons with reconstructions. Returns {'neurons': [...], 'total': N}."""
     filters = ["[nr__reconstruction_type$nenull]"]
 
-    if species:
-        filters.append(f"[donor__species$il'{_safe_filter_value(species)}']")
-    if sex:
-        filters.append(f"[donor__sex$eq'{_safe_filter_value(sex)}']")
-    if disease_state:
-        filters.append(f"[donor__disease_state$il'{_safe_filter_value(disease_state)}']")
-    if brain_area_acronym:
-        filters.append(f"[structure__acronym$eq'{_safe_filter_value(brain_area_acronym)}']")
-    if brain_area_parent_acronym:
-        filters.append(f"[structure_parent__acronym$eq'{_safe_filter_value(brain_area_parent_acronym)}']")
-    if layer:
-        filters.append(f"[structure__layer$eq'{_safe_filter_value(layer)}']")
-    if hemisphere:
-        filters.append(f"[specimen__hemisphere$eq'{_safe_filter_value(hemisphere)}']")
-    if dendrite_type:
-        filters.append(f"[tag__dendrite_type$eq'{_safe_filter_value(dendrite_type)}']")
-    if apical:
-        filters.append(f"[tag__apical$eq'{_safe_filter_value(apical)}']")
-    if reconstruction_type:
-        filters.append(f"[nr__reconstruction_type$eq'{_safe_filter_value(reconstruction_type)}']")
-    if reporter_status:
-        filters.append(f"[cell_reporter_status$eq'{_safe_filter_value(reporter_status)}']")
-    if line_name:
-        filters.append(f"[line_name$il'{_safe_filter_value(line_name)}']")
+    if species:                   filters.append(f"[donor__species$il'{_safe_filter_value(species)}']")
+    if brain_area_acronym:        filters.append(f"[structure__acronym$eq'{_safe_filter_value(brain_area_acronym)}']")
+    if brain_area_parent_acronym: filters.append(f"[structure_parent__acronym$eq'{_safe_filter_value(brain_area_parent_acronym)}']")
+    if layer:                     filters.append(f"[structure__layer$eq'{_safe_filter_value(layer)}']")
+    if line_name:                 filters.append(f"[line_name$il'{_safe_filter_value(line_name)}']")
 
     start_row = page * size
     rma = (
@@ -155,7 +110,8 @@ def search_neurons(
         f"rma::criteria,{''.join(filters)},"
         f"rma::options[num_rows$eq{size}][start_row$eq{start_row}][order$eq'specimen__id']"
     )
-    resp = requests.get(_RMA_URL, params={"criteria": rma}, timeout=_QUERY_TIMEOUT)
+    async with httpx.AsyncClient(timeout=_QUERY_TIMEOUT) as client:
+        resp = await client.get(_RMA_URL, params={"criteria": rma})
     resp.raise_for_status()
     data = resp.json()
     if not data.get("success"):
@@ -167,16 +123,65 @@ def search_neurons(
     }
 
 
-# ── SWC download ──────────────────────────────────────────────────────────────
+def specimen_to_details(s: dict) -> dict:
+    def _str(v):
+        return str(v).strip().strip('"').strip() if v not in (None, '') else ''
 
-def fetch_swc_for_specimen(specimen_id: int) -> tuple:
-    """Download SWC morphology for a specimen. Returns (swc_text, filename)."""
+    raw_fields = [
+        ('Species',           _str(s.get('donor__species'))),
+        ('Age',               _str(s.get('donor__age'))),
+        ('Sex',               _str(s.get('donor__sex'))),
+        ('Disease State',     _str(s.get('donor__disease_state'))),
+        ('Structure',         _str(s.get('structure__name'))),
+        ('Acronym',           _str(s.get('structure__acronym'))),
+        ('Layer',             _str(s.get('structure__layer'))),
+        ('Hemisphere',        _str(s.get('specimen__hemisphere'))),
+        ('Dendrite Type',     _str(s.get('tag__dendrite_type'))),
+        ('Apical Dendrite',   _str(s.get('tag__apical'))),
+        ('Transgenic Line',   _str(s.get('line_name'))),
+        ('Reporter Status',   _str(s.get('cell_reporter_status'))),
+    ]
+    detail = {
+        'fields': [{'label': k, 'value': v} for k, v in raw_fields if v not in ('', 'NA')],
+    }
+
+    models = []
+    if s.get('m__glif'):                models.append(f"GLIF ({s['m__glif']} variant{'s' if s['m__glif'] != 1 else ''})")
+    if s.get('m__biophys_perisomatic'): models.append('Biophysical perisomatic')
+    if s.get('m__biophys_all_active'):  models.append('Biophysical all-active')
+    if models:
+        detail['fields'].append({'label': 'Models Available', 'value': ', '.join(models)})
+
+    thumb = s.get('morph_thumb_path') or ''
+    if thumb:
+        file_id = thumb.rstrip('/').split('/')[-1]
+        detail['image_url'] = f"/allenbrain/thumb/{file_id}"
+
+    return detail
+
+
+async def fetch_specimen_by_id(specimen_id: int) -> dict:
+    rma = (
+        f"model::ApiCellTypesSpecimenDetail,"
+        f"rma::criteria,[specimen__id$eq{specimen_id}],"
+        f"rma::options[num_rows$eq1]"
+    )
+    async with httpx.AsyncClient(timeout=_QUERY_TIMEOUT) as client:
+        resp = await client.get(_RMA_URL, params={"criteria": rma})
+    resp.raise_for_status()
+    data = resp.json()
+    if not data.get("success") or not data.get("msg"):
+        raise RuntimeError(f"Specimen {specimen_id} not found")
+    return data["msg"][0]
+
+
+async def fetch_swc_for_specimen(specimen_id: int) -> tuple:
     criteria = f"[id$eq{specimen_id}],neuron_reconstructions(well_known_files)"
     includes = (
         f"neuron_reconstructions("
         f"well_known_files(well_known_file_type[name$eq'{_SWC_FILE_TYPE}']))"
     )
-    results = _rma_query("Specimen", criteria=criteria, include=includes)
+    results = await _rma_query("Specimen", criteria=criteria, include=includes)
 
     try:
         wkf      = results[0]["neuron_reconstructions"][0]["well_known_files"][0]
@@ -188,7 +193,8 @@ def fetch_swc_for_specimen(specimen_id: int) -> tuple:
     if not server_name.lower().endswith(".swc"):
         server_name = f"specimen_{specimen_id}.swc"
 
-    resp = requests.get(_API_BASE + file_url, timeout=_DOWNLOAD_TIMEOUT)
+    async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT) as client:
+        resp = await client.get(_API_BASE + file_url)
     resp.raise_for_status()
 
     content_type = resp.headers.get("Content-Type", "")
@@ -205,39 +211,8 @@ def fetch_swc_for_specimen(specimen_id: int) -> tuple:
     return raw.decode("utf-8"), server_name
 
 
-# ── Image proxies ─────────────────────────────────────────────────────────────
-
-def fetch_morph_thumb(file_id: int) -> tuple:
-    """Proxy a morphology thumbnail. Returns (image_bytes, content_type)."""
-    resp = requests.get(f"{_DOWNLOAD_URL}/{file_id}", timeout=_DOWNLOAD_TIMEOUT)
+async def fetch_morph_thumb(file_id: int) -> tuple:
+    async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT) as client:
+        resp = await client.get(f"{_DOWNLOAD_URL}/{file_id}")
     resp.raise_for_status()
     return resp.content, resp.headers.get("Content-Type", "image/png")
-
-
-def _get_section_image_id(specimen_id: int) -> int:
-    results = _rma_query("ProjectionImage", criteria=f"[specimen_id$eq{specimen_id}]")
-    if not results:
-        raise RuntimeError(f"No projection image found for specimen {specimen_id}")
-    return results[0]["id"]
-
-
-def fetch_section_image(specimen_id: int) -> tuple:
-    """Proxy a section/projection JPEG. Returns (image_bytes, content_type)."""
-    image_id = _get_section_image_id(specimen_id)
-    resp = requests.get(
-        f"{_API_BASE}/api/v2/section_image_download/{image_id}",
-        timeout=_DOWNLOAD_TIMEOUT,
-    )
-    resp.raise_for_status()
-    return resp.content, resp.headers.get("Content-Type", "image/jpeg")
-
-
-def fetch_section_svg(specimen_id: int) -> tuple:
-    """Proxy a vector SVG of the section image. Returns (svg_bytes, 'image/svg+xml')."""
-    image_id = _get_section_image_id(specimen_id)
-    resp = requests.get(
-        f"{_API_BASE}/api/v2/svg_download/{image_id}",
-        timeout=_DOWNLOAD_TIMEOUT,
-    )
-    resp.raise_for_status()
-    return resp.content, "image/svg+xml"

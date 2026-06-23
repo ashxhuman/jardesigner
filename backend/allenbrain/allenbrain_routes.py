@@ -3,30 +3,25 @@
 # CORS handled globally in server.py.
 ##############################################
 import traceback
+from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+import json
+
+from extensions import run_async
 from .allenbrain import (
-    fetch_filter_options,
     fetch_species_options,
     search_neurons,
     fetch_swc_for_specimen,
     fetch_morph_thumb,
-    fetch_section_image,
-    fetch_section_svg,
+    fetch_specimen_by_id,
+    specimen_to_details,
 )
 
 allenbrain_routes = Blueprint("allenbrain", __name__)
 
-
-@allenbrain_routes.route("/filters", methods=["GET"])
-def get_filters():
-    """GET /allenbrain/filters — global options: species + morphology annotation fields."""
-    try:
-        return jsonify(fetch_filter_options())
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+USER_UPLOADS_DIR = Path(__file__).resolve().parent.parent / "user_uploads"
 
 
 @allenbrain_routes.route("/metadata", methods=["GET"])
@@ -39,7 +34,7 @@ def get_species_filters():
     if not species:
         return jsonify({"error": "species query param required"}), 400
     try:
-        return jsonify(fetch_species_options(species))
+        return jsonify(run_async(fetch_species_options(species)))
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -49,10 +44,9 @@ def get_species_filters():
 def search():
     """
     POST /allenbrain/search
-    Body: { species?, sex?, disease_state?, brain_area_acronym?,
-            brain_area_parent_acronym?, layer?, hemisphere?,
-            dendrite_type?, apical?, reconstruction_type?,
-            reporter_status?, line_name?, page?, size? }
+    Body: { species?, brain_area_acronym?, brain_area_parent_acronym?,
+            layer?, dendrite_type?, apical?, reconstruction_type?,
+            line_name?, page?, size? }
     """
     body = request.get_json(force=True, silent=True) or {}
     try:
@@ -62,22 +56,15 @@ def search():
         return jsonify({"error": "page and size must be integers"}), 400
 
     try:
-        result = search_neurons(
-            species                   = body.get("species") or None,
-            sex                       = body.get("sex") or None,
-            disease_state             = body.get("disease_state") or None,
-            brain_area_acronym        = body.get("brain_area_acronym") or None,
+        result = run_async(search_neurons(
+            species                   = body.get("species")                   or None,
+            brain_area_acronym        = body.get("brain_area_acronym")        or None,
             brain_area_parent_acronym = body.get("brain_area_parent_acronym") or None,
-            layer                     = body.get("layer") or None,
-            hemisphere                = body.get("hemisphere") or None,
-            dendrite_type             = body.get("dendrite_type") or None,
-            apical                    = body.get("apical") or None,
-            reconstruction_type       = body.get("reconstruction_type") or None,
-            reporter_status           = body.get("reporter_status") or None,
-            line_name                 = body.get("line_name") or None,
+            layer                     = body.get("layer")                     or None,
+            line_name                 = body.get("line_name")                 or None,
             page                      = page,
             size                      = size,
-        )
+        ))
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -93,61 +80,68 @@ def search():
     })
 
 
-@allenbrain_routes.route("/swc/<int:specimen_id>", methods=["GET"])
-def get_swc(specimen_id: int):
-    """GET /allenbrain/swc/<specimen_id> — proxy SWC morphology download."""
-    try:
-        swc_text, filename = fetch_swc_for_specimen(specimen_id)
-        return swc_text, 200, {
-            "Content-Type": "text/plain",
-            "Content-Disposition": f'attachment; filename="{filename}"',
-        }
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-
 @allenbrain_routes.route("/thumb/<int:file_id>", methods=["GET"])
 def get_thumb(file_id: int):
-    """
-    GET /allenbrain/thumb/<file_id>
-    Proxies the morphology thumbnail from morph_thumb_path (well_known_file_download).
-    """
+    """GET /allenbrain/thumb/<file_id> — proxy morphology thumbnail."""
     try:
-        img_bytes, content_type = fetch_morph_thumb(file_id)
+        img_bytes, content_type = run_async(fetch_morph_thumb(file_id))
         return img_bytes, 200, {"Content-Type": content_type}
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
-@allenbrain_routes.route("/preview/<int:specimen_id>", methods=["GET"])
-def get_preview(specimen_id: int):
-    """
-    GET /allenbrain/preview/<specimen_id>
-    Proxies a section/projection JPEG via section_image_download API.
-    """
+def stage_specimen(specimen_id: int, client_id: str) -> dict:
+    """Download SWC for specimen_id and save to the user's session directory."""
+    swc_text, filename = run_async(fetch_swc_for_specimen(specimen_id))
+    dest_dir = USER_UPLOADS_DIR / client_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    (dest_dir / filename).write_text(swc_text, encoding="utf-8")
+
     try:
-        img_bytes, content_type = fetch_section_image(specimen_id)
-        return img_bytes, 200, {"Content-Type": content_type}
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 404
+        s       = run_async(fetch_specimen_by_id(specimen_id))
+        details = specimen_to_details(s)
+
+        def _str(v):
+            return str(v).strip().strip('"').strip() if v not in (None, '') else ''
+
+        item = {
+            "id":          f"ab_{specimen_id}",
+            "name":        filename.replace(".swc", ""),
+            "source":      f"AllenBrain/{_str(s.get('donor__species'))}",
+            "description": " ".join(filter(None, [
+                _str(s.get("structure__name")),
+                _str(s.get("structure__layer")),
+                _str(s.get("tag__dendrite_type")),
+            ])),
+            "source_type":     "file",
+            "file_type":       "swc",
+            "server_file":     filename,
+            "staged_filename": filename,
+            "details":     details,
+        }
+        _upsert_user_registry(dest_dir, item)
+    except Exception:
+        pass  # registry update is best-effort; don't fail the download
+
+    return {"filename": filename}
 
 
-@allenbrain_routes.route("/svg/<int:specimen_id>", methods=["GET"])
-def get_svg(specimen_id: int):
-    """
-    GET /allenbrain/svg/<specimen_id>
-    Proxies a vector SVG of the section image via svg_download API.
-    Higher quality than /preview (vector, scalable).
-    """
+def _upsert_user_registry(dest_dir, item: dict) -> None:
+    path = dest_dir / "user_registry.json"
     try:
-        svg_bytes, content_type = fetch_section_svg(specimen_id)
-        return svg_bytes, 200, {"Content-Type": content_type}
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 404
+        registry = json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        registry = {}
+    section = registry.setdefault("morpho", {"items": []})
+    items = section.setdefault("items", [])
+    for i, existing in enumerate(items):
+        if existing.get("id") == item["id"]:
+            items[i] = item
+            break
+    else:
+        items.append(item)
+    path.write_text(json.dumps(registry, indent=2))
 
 
 @allenbrain_routes.route("/health", methods=["GET"])

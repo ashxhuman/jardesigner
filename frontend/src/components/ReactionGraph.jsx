@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import { Box, Paper, Typography, IconButton, ToggleButton, ToggleButtonGroup, Collapse, List, ListItem, ListItemIcon, ListItemText } from '@mui/material';
+import { Box, Paper, Typography, IconButton, ToggleButton, ToggleButtonGroup, Collapse, List, ListItem, ListItemIcon, ListItemText, Tooltip, useTheme } from '@mui/material';
 import { ZoomIn, ZoomOut, Refresh, Layers, ExpandLess, ExpandMore } from '@mui/icons-material';
 import { parseSplineToPath } from '../utils/splineUtils';
 
@@ -56,6 +56,8 @@ const extractColor = (obj, type = 'fill') => {
 
 const ReactionGraph = (props) => {
   const { graphData } = props;
+  const theme = useTheme();
+  const darkBg = theme.palette.mode === 'dark';
   const [viewMode, setViewMode] = useState('reaction');
   const [hoveredNode, setHoveredNode] = useState(null);
   const [legendOpen, setLegendOpen] = useState(true);
@@ -114,7 +116,7 @@ const ReactionGraph = (props) => {
                     stroke={strokeColor} 
                     rx={isRounded ? 8 : 0} 
                  />
-                 <text x={cx} y={cy} textAnchor="middle" fill="#666" fontSize="14" fontWeight="bold" style={{ pointerEvents: 'none', userSelect: 'none', fontFamily: 'Arial' }}>
+                 <text x={cx} y={cy} textAnchor="middle" fill={darkBg ? '#aaa' : '#666'} fontSize="14" fontWeight="bold" style={{ pointerEvents: 'none', userSelect: 'none', fontFamily: 'Arial' }}>
                      {titleText}
                  </text>
             </g>
@@ -190,7 +192,7 @@ const ReactionGraph = (props) => {
                         textAnchor="middle" 
                         dy=".3em" 
                         fontSize="10" 
-                        fill={fillColor === 'black' ? 'white' : 'black'}
+                        fill={fillColor === 'black' ? 'white' : (darkBg ? '#e8eaf6' : 'black')}
                         style={{ pointerEvents: 'none', userSelect: 'none' }}
                     >
                         {LabelContent}
@@ -264,13 +266,13 @@ const ReactionGraph = (props) => {
 
         return (
             <g key={edge._gvid}>
-                <path 
-                    d={d} 
-                    fill="none" 
-                    stroke="black" 
-                    strokeWidth="1" 
+                <path
+                    d={d}
+                    fill="none"
+                    stroke={darkBg ? '#90a4ae' : 'black'}
+                    strokeWidth="1"
                     strokeDasharray={isDashed ? "5,5" : "none"}
-                    markerEnd={edge.arrowhead === 'none' ? '' : 'url(#arrowhead)'}
+                    markerEnd={edge.arrowhead === 'none' ? '' : (darkBg ? 'url(#arrowhead-dark)' : 'url(#arrowhead)')}
                 />
                 {labelElement}
             </g>
@@ -317,15 +319,15 @@ const ReactionGraph = (props) => {
 
   if (!graphData) {
       return (
-         <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f5' }}>
-             <Typography sx={{ color: '#888' }}>No Graph Data</Typography>
+         <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default' }}>
+             <Typography color="text.secondary">No reaction graph data. Add a chemical model and run Setup 3D.</Typography>
          </Box>
       );
   }
 
   return (
-    <Box sx={{ width: '100%', height: '100%', position: 'relative', bgcolor: '#f5f5f5', overflow: 'hidden' }}>
-      
+    <Box sx={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', bgcolor: 'background.default' }}>
+
       {/* View Toggles */}
       <Paper elevation={2} sx={{ position: 'absolute', top: 10, right: 10, zIndex: 10, p: 0.5 }}>
         <ToggleButtonGroup value={viewMode} exclusive onChange={(e, val) => val && setViewMode(val)} size="small">
@@ -353,6 +355,9 @@ const ReactionGraph = (props) => {
                     <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
                       <polygon points="0 0, 10 3.5, 0 7" fill="black" />
                     </marker>
+                    <marker id="arrowhead-dark" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                      <polygon points="0 0, 10 3.5, 0 7" fill="#90a4ae" />
+                    </marker>
                   </defs>
                   <g>
                     {renderObjects()}
@@ -369,7 +374,7 @@ const ReactionGraph = (props) => {
 
       {/* Hover Tooltip */}
       {hoveredNode && (
-        <Paper sx={{ position: 'fixed', top: hoveredNode.y + 15, left: hoveredNode.x + 15, p: 1.5, zIndex: 100, maxWidth: 300, pointerEvents: 'none', border: '1px solid #ccc', boxShadow: 3 }}>
+        <Paper sx={{ position: 'fixed', top: hoveredNode.y + 15, left: hoveredNode.x + 15, p: 1.5, zIndex: 100, maxWidth: 300, pointerEvents: 'none', border: '1px solid rgba(67,71,78,0.6)', boxShadow: 3 }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{hoveredNode.name}</Typography>
           <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>{hoveredNode.className}</Typography>
           {Object.entries(hoveredNode).map(([k, v]) => {

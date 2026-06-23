@@ -49,6 +49,7 @@ const initialJsonData = {
 const requiredKeys = ["filetype", "version"];
 const API_BASE_URL = `http://${window.location.hostname}:5000`;
 const VIEW_IDS = { SETUP: 'setup', RUN: 'run' };
+const withoutRuntime = ({ runtime: _r, ...rest }) => rest;
 
 // ... (Keep compactJsonData and isSameSelection helpers) ...
 const isSameSelection = (selA, selB) => {
@@ -97,6 +98,8 @@ export const useAppLogic = () => {
     const [plotError, setPlotError] = useState('');
     const [simError, setSimError] = useState(null);
     const [isSimulating, setIsSimulating] = useState(false);
+    const [liveGraphData, setLiveGraphData] = useState(null);
+    const liveGraphAccRef = useRef(null); // accumulates plot arrays without triggering renders
     const [isPaused, setIsPaused] = useState(false);  // Pause state
     const [clientId] = useState(() => uuidv4());
     const sessionTokenRef = useRef('');
@@ -272,6 +275,28 @@ export const useAppLogic = () => {
                 return;
             }
 
+            if (data?.type === 'plot_live_update') {
+                const acc = liveGraphAccRef.current;
+                if (!acc) {
+                    // First update — initialise structure
+                    liveGraphAccRef.current = {
+                        currentTime: data.currentTime,
+                        plots: data.plots.map(p => ({ ...p, val: p.val.map(t => [...t]) })),
+                    };
+                } else {
+                    acc.currentTime = data.currentTime;
+                    data.plots.forEach((p, i) => {
+                        if (!acc.plots[i]) return;
+                        p.val.forEach((trace, j) => {
+                            if (acc.plots[i].val[j]) acc.plots[i].val[j].push(...trace);
+                        });
+                    });
+                }
+                // Shallow-copy to trigger re-render (plots arrays mutated in place above)
+                setLiveGraphData({ ...liveGraphAccRef.current });
+                return;
+            }
+
             if (data?.type === 'sim_batch') {
                 const frames = data.frames || [];
                 if (frames.length > 0) {
@@ -378,6 +403,7 @@ export const useAppLogic = () => {
                     if (socketRef.current?.connected) {
                         setPlotDataUrl(null); setIsPlotReady(false); setPlotError('');
                         setSimError(null);
+                        setLiveGraphData(null); liveGraphAccRef.current = null;
                         setSimulationFrames(prev => ({ ...prev, [VIEW_IDS.RUN]: [] }));
                         setThreeDConfigs(prev => ({ ...prev, [VIEW_IDS.RUN]: null }));
                         handleRewindReplay();
@@ -420,6 +446,7 @@ export const useAppLogic = () => {
         if (!activeSim.pid || !socketRef.current?.connected) return;
         setPlotDataUrl(null); setIsPlotReady(false); setPlotError('');
         setSimError(null);
+        setLiveGraphData(null); liveGraphAccRef.current = null;
         if (simulationFrames[VIEW_IDS.RUN].length === 0) {
             setThreeDConfigs(prev => ({ ...prev, [VIEW_IDS.RUN]: null }));
             handleRewindReplay();
@@ -449,9 +476,6 @@ export const useAppLogic = () => {
     const handleBuildAndStartRun = useCallback((runConfig) => {
         const latestData = { ...initialJsonData, ...jsonData, ...runConfig };
         const compactedData = compactJsonData(latestData, initialJsonData);
-        // Exclude runtime from rebuild decision: it is passed at run time to moose.start()
-        // and does not affect the MOOSE model structure.
-        const withoutRuntime = ({ runtime: _r, ...rest }) => rest;
         const structurallyUnchanged = activeSim.pid &&
             isEqual(withoutRuntime(compactedData), withoutRuntime(lastBuiltJsonDataRef.current ?? {}));
         if (structurallyUnchanged) {
@@ -506,7 +530,7 @@ export const useAppLogic = () => {
 
     const baseProps = {
         activeMenu, toggleMenu, jsonData, jsonContent,
-        plotDataUrl, isPlotReady, plotError, isSimulating, activeSim, clientId,
+        plotDataUrl, isPlotReady, plotError, isSimulating, liveGraphData, activeSim, clientId,
         updateJsonData, setRunParameters, handleStartRun, handleResetRun,
         handleBuildAndStartRun, handleStopRun, updateJsonString,
         handleClearModel, getCurrentJsonData, getChemProtos, setActiveMenu, handleMorphologyFileChange, setWarnedAboutMissing,
