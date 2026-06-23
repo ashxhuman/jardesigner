@@ -1,8 +1,21 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Box, TablePagination, Typography } from '@mui/material';
-import AllenBrainSearchBar from './AllenBrainSearchBar';
+import {
+    Box, Button, Autocomplete, TextField,
+    CircularProgress, TablePagination, Typography,
+} from '@mui/material';
 
+function layerSortKey(l) {
+    if (l.includes('/')) {
+        const [a, b] = l.split('/').map(Number);
+        return a + 1 / (b + 1);
+    }
+    const m = l.match(/^(\d+)([a-z]?)$/);
+    if (m) return Number(m[1]) + ({ a: 0.1, b: 0.2, c: 0.3 }[m[2]] || 0);
+    return 99;
+}
+
+const SPECIES_OPTIONS = ['Homo Sapiens', 'Mus musculus'];
 const DEFAULT_PAGE_SIZE = 20;
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
 
@@ -18,12 +31,40 @@ const toItem = (s) => ({
 });
 
 export default function AllenBrainSearchForm({ onResults, footerEl, baseUrl = 'http://localhost:5000' }) {
-    const [loading, setLoading] = useState(false);
-    const [error, setError]     = useState(null);
-    const [page, setPage]       = useState(0);
-    const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-    const [rowCount, setRowCount] = useState(0);
+    // Search bar state
+    const [species, setSpecies]     = useState(null);
+    const [area, setArea]           = useState(null);
+    const [layer, setLayer]         = useState(null);
+    const [lineName, setLineName]   = useState(null);
+    const [meta, setMeta]           = useState(null);
+    const [metaLoading, setMetaLoading] = useState(false);
+
+    // Results state
+    const [loading, setLoading]     = useState(false);
+    const [error, setError]         = useState(null);
+    const [page, setPage]           = useState(0);
+    const [pageSize, setPageSize]   = useState(DEFAULT_PAGE_SIZE);
+    const [rowCount, setRowCount]   = useState(0);
     const lastQuery = useRef(null);
+
+    useEffect(() => {
+        setArea(null); setLayer(null); setLineName(null);
+        if (!species) { setMeta(null); return; }
+        const controller = new AbortController();
+        setMetaLoading(true);
+        fetch(`${baseUrl}/allenbrain/metadata?species=${encodeURIComponent(species)}`, { signal: controller.signal })
+            .then(r => r.json())
+            .then(d => setMeta(d))
+            .catch(e => { if (e.name !== 'AbortError') console.error(e); })
+            .finally(() => setMetaLoading(false));
+        return () => controller.abort();
+    }, [species, baseUrl]);
+
+    const areaMap = {};
+    (meta?.brain_areas || []).forEach(a => { areaMap[a.acronym] = a; });
+    const areaOpts  = Object.keys(areaMap).sort((a, b) => a.localeCompare(b));
+    const layerOpts = (meta?.layers || []).slice().sort((a, b) => layerSortKey(a) - layerSortKey(b));
+    const lineOpts  = species === 'Mus musculus' ? (meta?.line_names || []) : [];
 
     const _fetchPage = async (query, pg, pgSize, { showSpinner = false } = {}) => {
         if (showSpinner) setLoading(true);
@@ -48,7 +89,18 @@ export default function AllenBrainSearchForm({ onResults, footerEl, baseUrl = 'h
         }
     };
 
-    const handleSearch = async (query) => {
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!species) return;
+        const entry    = area ? areaMap[area] : null;
+        const isParent = entry?.is_parent ?? false;
+        const query = {
+            species,
+            brain_area_acronym:        isParent ? '' : (area || ''),
+            brain_area_parent_acronym: isParent ? area : '',
+            layer:     layer    || '',
+            line_name: lineName || '',
+        };
         lastQuery.current = query;
         await _fetchPage(query, 0, pageSize, { showSpinner: true });
     };
@@ -79,7 +131,54 @@ export default function AllenBrainSearchForm({ onResults, footerEl, baseUrl = 'h
     return (
         <>
             <Box>
-                <AllenBrainSearchBar onSearch={handleSearch} loading={loading} baseUrl={baseUrl} />
+                <form onSubmit={handleSubmit}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                        <Autocomplete
+                            size="small" sx={{ width: 200 }}
+                            options={SPECIES_OPTIONS}
+                            value={species}
+                            onChange={(_, val) => setSpecies(val)}
+                            disabled={loading}
+                            renderInput={(params) => <TextField {...params} label="Species" size="small" variant="outlined" />}
+                        />
+                        <Autocomplete
+                            size="small" sx={{ width: 220, display: species ? 'inline-flex' : 'none' }}
+                            options={areaOpts}
+                            value={area}
+                            onChange={(_, val) => setArea(val)}
+                            disabled={!species || loading || metaLoading}
+                            loading={metaLoading}
+                            getOptionLabel={opt => `${opt} — ${areaMap[opt]?.name || ''}`}
+                            renderInput={(params) => (
+                                <TextField {...params} label="Brain Area" size="small" variant="outlined"
+                                    InputProps={{ ...params.InputProps, endAdornment: (<>{metaLoading ? <CircularProgress size={14} sx={{ mr: 1 }} /> : null}{params.InputProps.endAdornment}</>) }}
+                                />
+                            )}
+                        />
+                        <Autocomplete
+                            size="small" sx={{ width: 140, display: species ? 'inline-flex' : 'none' }}
+                            options={layerOpts}
+                            value={layer}
+                            onChange={(_, val) => setLayer(val)}
+                            disabled={!species || loading || metaLoading}
+                            loading={metaLoading}
+                            getOptionLabel={opt => `Layer ${opt}`}
+                            renderInput={(params) => <TextField {...params} label="Layer" size="small" variant="outlined" />}
+                        />
+                        <Autocomplete
+                            size="small" sx={{ width: 200, display: species === 'Mus musculus' ? 'inline-flex' : 'none' }}
+                            options={lineOpts}
+                            value={lineName}
+                            onChange={(_, val) => setLineName(val)}
+                            disabled={!species || loading || metaLoading}
+                            loading={metaLoading}
+                            renderInput={(params) => <TextField {...params} label="Transgenic Line" size="small" variant="outlined" />}
+                        />
+                        <Button size="small" type="submit" variant="contained" disabled={loading || !species}>
+                            Search
+                        </Button>
+                    </Box>
+                </form>
                 {error && <Typography color="error" variant="body2" sx={{ mt: 0.5 }}>{error}</Typography>}
             </Box>
             {footerEl && pagination && createPortal(pagination, footerEl)}
