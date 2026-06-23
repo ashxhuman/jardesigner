@@ -1,23 +1,23 @@
 import React, { useMemo } from 'react';
 import { AppBar, Toolbar, Button, Grid, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Typography, Box } from '@mui/material';
-import runIcon from './assets/run.png';
-import morphoIcon from './assets/morpho.png';
-import spinesIcon from './assets/spines.png';
-import elecIcon from './assets/chan.png';
-import passiveIcon from './assets/passive.png';
-import chemIcon from './assets/chem.png';
-import adaptorsIcon from './assets/adaptors.png';
-import plotsIcon from './assets/plots.png';
-import stimIcon from './assets/stim.png';
-import d3Icon from './assets/3D.png';
-import fileIcon from './assets/file.png';
-import simOutputIcon from './assets/simOutput.png';
+import runIcon from './assets/run.svg';
+import morphoIcon from './assets/morpho.svg';
+import spinesIcon from './assets/spines.svg';
+import elecIcon from './assets/chan.svg';
+import passiveIcon from './assets/passive.svg';
+import chemIcon from './assets/chem.svg';
+import adaptorsIcon from './assets/adaptors.svg';
+import plotsIcon from './assets/plots.svg';
+import stimIcon from './assets/stim.svg';
+import d3Icon from './assets/3D.svg';
+import fileIcon from './assets/file.svg';
+import simOutputIcon from './assets/simOutput.svg';
 import FileMenuBox from './components/MenuBoxes/FileMenuBox';
 import SimOutputMenuBox from './components/MenuBoxes/SimOutputMenuBox';
 import RunMenuBox from './components/MenuBoxes/RunMenuBox';
 import MorphoMenuBox from './components/MenuBoxes/MorphoMenuBox';
 import SpineMenuBox from './components/MenuBoxes/SpineMenuBox';
-import ElecMenuBox from './components/MenuBoxes/ElecMenuBox';
+import ChanMenuBox from './components/MenuBoxes/ChanMenuBox';
 import PassiveMenuBox from './components/MenuBoxes/PassiveMenuBox';
 import ChemMenuBox from './components/MenuBoxes/ChemMenuBox';
 import AdaptorsMenuBox from './components/MenuBoxes/AdaptorsMenuBox';
@@ -113,6 +113,9 @@ export const AppLayout = (props) => {
     handlePauseRun,     // Pause handler
     handleResumeRun,    // Resume handler
     handleResetRun,
+    handleBuildAndStartRun,
+    handleStopRun,
+    setRunParameters,
     isSimulating,
     isPaused,           // Pause state
     activeSim,
@@ -127,7 +130,8 @@ export const AppLayout = (props) => {
     simError,     
     setSimError,
     elecPaths,
-    spinePaths
+    spinePaths,
+    setWarnedAboutMissing,
   } = props;
 
   // Extract channel names for use in Plots, Stimuli, and Adaptors.
@@ -147,7 +151,7 @@ export const AppLayout = (props) => {
   }, [jsonData.chanProto, threeDConfigs]);
 
   const menuComponents = useMemo(() => ({
-    File: <FileMenuBox setJsonContent={updateJsonString} onClearModel={handleClearModel} getCurrentJsonData={getCurrentJsonData} currentConfig={jsonData.fileinfo} clientId={clientId} />,
+    File: <FileMenuBox setJsonContent={updateJsonString} onClearModel={handleClearModel} getCurrentJsonData={getCurrentJsonData} currentConfig={jsonData.fileinfo} clientId={clientId} onMissingFilesWarned={setWarnedAboutMissing} />,
     SimOutput: <SimOutputMenuBox 
         onConfigurationChange={updateJsonData} 
         currentConfig={jsonData.files} 
@@ -157,22 +161,26 @@ export const AppLayout = (props) => {
     />,
     Run: <RunMenuBox
       onConfigurationChange={updateJsonData}
+      setRunParameters={setRunParameters}
       currentConfig={{ ...jsonData }}
       onStartRun={handleStartRun}
       onPauseRun={handlePauseRun}      // Pass pause handler
       onResumeRun={handleResumeRun}    // Pass resume handler
       onResetRun={handleResetRun}
+      onBuildAndStartRun={handleBuildAndStartRun}
+      onStopRun={handleStopRun}
       isSimulating={isSimulating}
       isPaused={isPaused}              // Pass pause state
       activeSimPid={activeSim.pid}
       liveFrameData={liveFrameData}
       isReplaying={isReplaying}
     />,
-    Morphology: <MorphoMenuBox 
-        onConfigurationChange={updateJsonData} 
-        currentConfig={jsonData.cellProto} 
-        onFileChange={handleMorphologyFileChange} 
-        clientId={clientId} 
+    Morphology: <MorphoMenuBox
+        onConfigurationChange={updateJsonData}
+        currentConfig={jsonData.cellProto}
+        onFileChange={handleMorphologyFileChange}
+        clientId={clientId}
+        setupThreeDConfig={threeDConfigs?.setup}
     />,
     Spines: <SpineMenuBox 
         onConfigurationChange={updateJsonData} 
@@ -180,7 +188,7 @@ export const AppLayout = (props) => {
         elecPaths={elecPaths} 
         spinePaths={spinePaths} 
     />,
-    Channels: <ElecMenuBox 
+    Channels: <ChanMenuBox
         onConfigurationChange={updateJsonData} 
         currentConfig={{ chanProto: jsonData.chanProto, chanDistrib: jsonData.chanDistrib }} 
         clientId={clientId}
@@ -218,14 +226,14 @@ export const AppLayout = (props) => {
         // --- Added channelPrototypes ---
         channelPrototypes={channelPrototypes}
     />,
-    Plots: <PlotMenuBox 
-        onConfigurationChange={updateJsonData} 
-        currentConfig={jsonData.plots} 
-        meshMols={meshMolsData?.setup} 
-        elecPaths={elecPaths} 
-        spinePaths={spinePaths} 
-        // --- Added channelPrototypes ---
+    Plots: <PlotMenuBox
+        onConfigurationChange={updateJsonData}
+        currentConfig={jsonData.plots}
+        meshMols={meshMolsData?.setup}
+        elecPaths={elecPaths}
+        spinePaths={spinePaths}
         channelPrototypes={channelPrototypes}
+        stims={jsonData.stims}
     />,
     '3D': <ThreeDMenuBox 
         onConfigurationChange={updateJsonData} 

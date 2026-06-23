@@ -41,7 +41,7 @@ export const useReplayLogic = ({
   const updateSceneToTime = useCallback((time) => {
     if (!threeDManagerRef.current) return;
     const visibleGroupIds = new Set(visibleFrames.map(f => f.groupId));
-    
+
     // For each visible drawable, find the latest frame at or before the given time and display it.
     visibleGroupIds.forEach(groupId => {
         let frameToDisplay = null;
