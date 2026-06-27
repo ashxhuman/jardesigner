@@ -251,6 +251,8 @@ const RunMenuBox = ({
         }
     };
 
+    const startButtonText = currentTime > 0 ? 'Continue' : 'Start';
+
     return (
         <Box sx={{ p: 2, background: '#f5f5f5', borderRadius: 2 }}>
             <Grid container spacing={1} sx={{ mb: 2 }}>
