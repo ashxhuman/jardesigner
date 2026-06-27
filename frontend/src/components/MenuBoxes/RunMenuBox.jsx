@@ -113,6 +113,10 @@ const RunMenuBox = ({
         }
     }, [liveFrameData]);
 
+    useEffect(() => {
+        setCurrentTime(0.0);
+    }, [activeSimPid]);
+
     const handleRuntimeChange = (value) => setRuntime(value);
     const updateClock = (field, value) => setClocks((prev) => ({ ...prev, [field]: value }));
     const updateConfigSetting = (field, value) => setConfigSettings((prev) => ({ ...prev, [field]: value }));
