@@ -45,11 +45,11 @@ const DisplayWindow = (props) => {
 
   useEffect(() => {
     const hasNewSetupConfig = threeDConfigs?.setup && !prevThreeDConfigSetup.current;
-    if (hasNewSetupConfig) {
+    if (hasNewSetupConfig && tabIndex !== 2) {
       setTabIndex(3);
     }
     prevThreeDConfigSetup.current = threeDConfigs?.setup;
-  }, [threeDConfigs?.setup]);
+  }, [threeDConfigs?.setup, tabIndex]);
 
   // When a run starts, switch to Graph if plots are defined, else Run 3D.
   useEffect(() => {
