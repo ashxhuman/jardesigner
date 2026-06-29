@@ -129,6 +129,7 @@ export const AppLayout = (props) => {
     elecPaths,
     spinePaths,
     setWarnedAboutMissing,
+    handleLoadTutorial,
   } = props;
 
   // Extract channel names for use in Plots, Stimuli, and Adaptors.
@@ -148,7 +149,7 @@ export const AppLayout = (props) => {
   }, [jsonData.chanProto, threeDConfigs]);
 
   const menuComponents = useMemo(() => ({
-    File: <FileMenuBox setJsonContent={updateJsonString} onClearModel={handleClearModel} getCurrentJsonData={getCurrentJsonData} currentConfig={jsonData.fileinfo} clientId={clientId} onMissingFilesWarned={setWarnedAboutMissing} />,
+    File: <FileMenuBox setJsonContent={updateJsonString} onClearModel={handleClearModel} getCurrentJsonData={getCurrentJsonData} currentConfig={jsonData.fileinfo} clientId={clientId} onMissingFilesWarned={setWarnedAboutMissing} updateJsonData={updateJsonData} />,
     SimOutput: <SimOutputMenuBox 
         onConfigurationChange={updateJsonData} 
         currentConfig={jsonData.files} 
@@ -314,6 +315,8 @@ export const AppLayout = (props) => {
         <Grid item xs={8} style={{ height: '100%' }}>
           <DisplayWindow
             {...props}
+            docFile={jsonData.docFile}
+            onLoadTutorial={handleLoadTutorial}
           />
         </Grid>
       </Grid>

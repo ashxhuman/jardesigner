@@ -33,7 +33,9 @@ const DisplayWindow = (props) => {
     handleSeekReplay,
     clientId,
     isSimulating,
-    reactionGraphs
+    reactionGraphs,
+    docFile,
+    onLoadTutorial,
   } = props;
 
   // ... (Keep all existing hooks/logic exactly as is) ...
@@ -43,11 +45,11 @@ const DisplayWindow = (props) => {
 
   useEffect(() => {
     const hasNewSetupConfig = threeDConfigs?.setup && !prevThreeDConfigSetup.current;
-    if (hasNewSetupConfig) {
+    if (hasNewSetupConfig && tabIndex !== 2) {
       setTabIndex(3);
     }
     prevThreeDConfigSetup.current = threeDConfigs?.setup;
-  }, [threeDConfigs?.setup]);
+  }, [threeDConfigs?.setup, tabIndex]);
 
   // When a run starts, switch to Graph if plots are defined, else Run 3D.
   useEffect(() => {
@@ -103,8 +105,8 @@ const DisplayWindow = (props) => {
         <MemoizedJsonText jsonString={jsonContent} setActiveMenu={setActiveMenu} />
       </Box>
 
-      <Box sx={{ flexGrow: 1, overflowY: 'auto', display: tabIndex === 2 ? 'block' : 'none' }}>
-        <MemoizedMarkdownText />
+      <Box sx={{ flexGrow: 1, overflow: 'hidden', display: tabIndex === 2 ? 'flex' : 'none', flexDirection: 'column' }}>
+        <MemoizedMarkdownText clientId={clientId} docFile={docFile} onLoadTutorial={onLoadTutorial} />
       </Box>
       
       <Box sx={{ flexGrow: 1, overflow: 'hidden', display: tabIndex === 3 ? 'flex' : 'none', flexDirection: 'column', position: 'relative' }}>

@@ -113,7 +113,7 @@ def terminate_process(pid):
 _UPLOADS_REAL = os.path.realpath(USER_UPLOADS_DIR)
 
 # Extensions accepted for user-uploaded model files.
-_ALLOWED_UPLOAD_EXTENSIONS = {'.swc', '.p', '.g', '.xml', '.sbml', '.nml', '.json'}
+_ALLOWED_UPLOAD_EXTENSIONS = {'.swc', '.p', '.g', '.xml', '.sbml', '.nml', '.json', '.md', '.png', '.jpg', '.jpeg', '.svg', '.html'}
 
 def _is_safe_client_id(client_id):
     """Return True only if client_id resolves to a path within USER_UPLOADS_DIR."""
@@ -536,6 +536,8 @@ def _get_referenced_sources(parsed):
     for cp in parsed.get('chanProto', []):
         if cp.get('source'):
             sources.append(cp['source'])
+    if parsed.get('docFile'):
+        sources.append(parsed['docFile'])
     return sources
 
 
@@ -631,6 +633,45 @@ def upload_project(client_id):
 
     if json_content is None:
         return jsonify({'error': 'No jardesigner JSON file found in archive'}), 400
+
+    return jsonify({'status': 'success', 'json': json_content})
+
+
+EXAMPLES_DIR = os.path.join(BASE_DIR, 'EXAMPLES')
+
+
+@app.route('/examples', methods=['GET'])
+def list_examples():
+    index_path = os.path.join(EXAMPLES_DIR, 'index.json')
+    if not os.path.isfile(index_path):
+        return jsonify([])
+    with open(index_path, 'r') as f:
+        return jsonify(json.load(f))
+
+
+@app.route('/load_example/<client_id>/<name>', methods=['POST'])
+def load_example(client_id, name):
+    if not _is_safe_client_id(client_id):
+        return jsonify({'error': 'Invalid client ID'}), 400
+    safe_name = secure_filename(name)
+    archive_path = os.path.join(EXAMPLES_DIR, safe_name + '.jardes')
+    if not os.path.isfile(archive_path):
+        return jsonify({'error': f'Example "{name}" not found'}), 404
+
+    session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
+    os.makedirs(session_dir, exist_ok=True)
+
+    try:
+        shutil.unpack_archive(archive_path, session_dir, format='zip')
+    except Exception as e:
+        return jsonify({'error': f'Failed to unpack example: {str(e)}'}), 400
+
+    json_path, _ = _get_newest_jardesigner_json(session_dir)
+    if not json_path:
+        return jsonify({'error': 'No jardesigner JSON found in example'}), 400
+
+    with open(json_path, 'r') as f:
+        json_content = f.read()
 
     return jsonify({'status': 'success', 'json': json_content})
 
