@@ -670,8 +670,21 @@ def load_example(client_id, name):
     if not json_path:
         return jsonify({'error': 'No jardesigner JSON found in example'}), 400
 
-    with open(json_path, 'r') as f:
-        json_content = f.read()
+    # Prefer <name>.json from the archive (same logic as upload_project)
+    json_content = None
+    preferred_path = os.path.join(session_dir, safe_name + '.json')
+    if os.path.isfile(preferred_path):
+        try:
+            with open(preferred_path, 'r') as f:
+                text = f.read()
+            if json.loads(text).get('filetype') == 'jardesigner':
+                json_content = text
+        except Exception:
+            pass
+
+    if json_content is None:
+        with open(json_path, 'r') as f:
+            json_content = f.read()
 
     return jsonify({'status': 'success', 'json': json_content})
 
