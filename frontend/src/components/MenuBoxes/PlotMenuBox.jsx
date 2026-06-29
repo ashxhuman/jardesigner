@@ -28,8 +28,14 @@ import { getCompartmentOptions, OPTION_USER_SPECIFIED } from '../../utils/menuHe
 // --- Define options outside component ---
 const nonChemFieldOptions = [
     'Vm', 'Im', 'inject', 'Gbar', 'Gk', 'Ik', 'ICa', 'Cm', 'Rm', 'Ra',
-    'Ca', 'activation', 'current', 'modulation', 'psdArea'
+    'Ca', 'current', 'activation', 'modulation', 'psdArea'
 ];
+const nonChemFieldLabels = {
+    'current': 'vclamp current',
+    'activation': 'channel activation',
+    'modulation': 'channel modulation',
+};
+const getFieldLabel = (field) => nonChemFieldLabels[field] || field;
 const chemFieldOptions = ['n', 'conc', 'volume', 'concInit', 'nInit'];
 const modeOptions = ['time', 'space', 'wave', 'raster'];
 
@@ -41,19 +47,32 @@ const safeToString = (value, defaultValue = '') => {
 // --- Regex to parse chem paths like "DEND/Ca[0]" ---
 const chemPathRegex = /([^/]+)\/([^[]+)(\[.*\])?/;
 
+// --- Compute auto title from path, field, childPath ---
+const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+const computeDefaultTitle = (path, field, childPath) => {
+    if (chemFieldOptions.includes(field)) {
+        return [(childPath || ''), capitalize(field || '')].filter(Boolean).join(' ');
+    }
+    return [capitalize(path || ''), capitalize(getFieldLabel(field || ''))].filter(Boolean).join(' ');
+};
+
 // --- Default state for a new plot entry ---
-const createDefaultPlot = () => ({
-    path: 'soma', // Default to soma
-    field: nonChemFieldOptions[0],
-    chemProto: '.', 
-    childPath: '', 
-    molIndex: '',  
-    title: '',
-    yMin: '0.0',
-    yMax: '0.0',
-    mode: 'time',
-    waveFrames: '100',
-});
+const createDefaultPlot = () => {
+    const path = 'soma';
+    const field = nonChemFieldOptions[0];
+    return {
+        path,
+        field,
+        chemProto: '.',
+        childPath: '',
+        molIndex: '',
+        title: computeDefaultTitle(path, field, ''),
+        yMin: '0.0',
+        yMax: '0.0',
+        mode: 'time',
+        waveFrames: '100',
+    };
+};
 
 // --- Reusable HelpField Component ---
 const HelpField = React.memo(({ id, label, value, onChange, onBlur, type = "text", fullWidth = true, ...props }) => {
@@ -78,13 +97,14 @@ const HelpField = React.memo(({ id, label, value, onChange, onBlur, type = "text
 });
 
 // --- Main Component ---
-const PlotMenuBox = ({ 
-    onConfigurationChange, 
-    currentConfig, 
+const PlotMenuBox = ({
+    onConfigurationChange,
+    currentConfig,
     meshMols,
     elecPaths = [],
     spinePaths = [],
-    channelPrototypes = [] // List of channel prototype names
+    channelPrototypes = [],
+    stims = []
 }) => {
     const [plots, setPlots] = useState(() => {
         const initialPlots = currentConfig?.map(p => {
@@ -119,6 +139,9 @@ const PlotMenuBox = ({
                 }
             } else {
                 initialChildPath = p.relpath || '';
+                if (field === 'current' && !initialChildPath) {
+                    initialChildPath = 'vclamp';
+                }
             }
 
             return {
@@ -127,7 +150,7 @@ const PlotMenuBox = ({
                 chemProto: initialChemProto,
                 childPath: initialChildPath,
                 molIndex: initialMolIndex,
-                title: p.title || '',
+                title: p.title || computeDefaultTitle(p.path || 'soma', field, initialChildPath),
                 yMin: formatFloat(p.ymin) || '0.0',
                 yMax: formatFloat(p.ymax) || '0.0',
                 mode: p.mode || 'time',
@@ -189,9 +212,14 @@ const PlotMenuBox = ({
                             updatedPlot.childPath = '';
                             updatedPlot.molIndex = '';
                         } else if (!wasChem && isNowChem) {
-                            updatedPlot.chemProto = ''; 
+                            updatedPlot.chemProto = '';
                             updatedPlot.childPath = '';
                             updatedPlot.molIndex = '';
+                        }
+                        if (value === 'current') {
+                            updatedPlot.childPath = 'vclamp';
+                        } else if (plot.field === 'current' && !isNowChem) {
+                            updatedPlot.childPath = '';
                         }
                     }
 
@@ -207,6 +235,15 @@ const PlotMenuBox = ({
                             updatedPlot.molIndex = value;
                         } else {
                             return plot; // Reject floats, negatives, or non-digits
+                        }
+                    }
+
+                    // Auto-update title when path, field, or childPath changes
+                    if (['path', 'field', 'childPath'].includes(key)) {
+                        const oldAutoTitle = computeDefaultTitle(plot.path, plot.field, plot.childPath);
+                        const newAutoTitle = computeDefaultTitle(updatedPlot.path, updatedPlot.field, updatedPlot.childPath);
+                        if (plot.title === '' || plot.title === oldAutoTitle) {
+                            updatedPlot.title = newAutoTitle;
                         }
                     }
 
@@ -262,6 +299,14 @@ const PlotMenuBox = ({
         return Array.isArray(mols) ? [...mols].sort() : [];
     }, [isChemField, meshMols, activePlotData?.chemProto]);
 
+
+    const vclampPaths = useMemo(() => {
+        const paths = new Set();
+        if (Array.isArray(stims)) {
+            stims.forEach(s => { if (s.field === 'vclamp' && s.path) paths.add(s.path); });
+        }
+        return paths;
+    }, [stims]);
 
     // --- Save/Refresh Logic ---
     const getPlotDataForSave = useCallback(() => {
@@ -341,7 +386,7 @@ const PlotMenuBox = ({
             </Box>
 
             <Box sx={{ borderBottom: 1, borderColor: 'divider', mt: 1 }}>
-                <Tabs value={activePlot} onChange={(e, nv) => setActivePlot(nv)} variant="scrollable" scrollButtons="auto">
+                <Tabs value={activePlot} onChange={(e, nv) => setActivePlot(nv)} sx={{ '& .MuiTabs-scroller': { overflow: 'visible !important' }, '& .MuiTabs-flexContainer': { flexWrap: 'wrap' } }}>
                     {plots.map((plot, index) => <Tab key={index} label={getTabLabel(plot)} />)}
                     <IconButton onClick={addPlot} sx={{ alignSelf: 'center', ml: '10px' }}><AddIcon /></IconButton>
                 </Tabs>
@@ -375,7 +420,7 @@ const PlotMenuBox = ({
                             <HelpField id="field" label="Field" select required value={activePlotData.field} onChange={(id, v) => updatePlot(activePlot, id, v)} helptext={helpText.fields.field}>
                                 <MenuItem value=""><em>Select Field...</em></MenuItem>
                                 <ListSubheader>Electrical/Other</ListSubheader>
-                                {nonChemFieldOptions.map(opt => <MenuItem key={opt} value={opt}>{opt}</MenuItem>)}
+                                {nonChemFieldOptions.map(opt => <MenuItem key={opt} value={opt}>{getFieldLabel(opt)}</MenuItem>)}
                                 <ListSubheader>Chemical</ListSubheader>
                                 {chemFieldOptions.map(opt => <MenuItem key={opt} value={opt}>{opt}</MenuItem>)}
                             </HelpField>
@@ -430,6 +475,25 @@ const PlotMenuBox = ({
                                     />
                                 </Grid>
                              </>
+                         ) : activePlotData.field === 'current' ? (
+                             <Grid item xs={12} sm={6}>
+                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                     <TextField
+                                         fullWidth
+                                         size="small"
+                                         label="Relative Path"
+                                         value="vclamp"
+                                         disabled
+                                         variant="outlined"
+                                         error={stims.length > 0 && !vclampPaths.has(activePlotData.path)}
+                                     />
+                                     <Tooltip title="VClamp child object — required for the 'current' field" placement="right">
+                                         <IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton>
+                                     </Tooltip>
+                                 </Box>
+                                 {stims.length > 0 && !vclampPaths.has(activePlotData.path) &&
+                                     <FormHelperText error>Warning: No VClamp stim on this compartment</FormHelperText>}
+                             </Grid>
                          ) : (
                              <>
                                  {/* Relative Path as Menu for Non-Chem Fields */}

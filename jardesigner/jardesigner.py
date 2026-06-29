@@ -26,6 +26,7 @@ import math
 import sys
 import time
 import threading
+import queue
 import matplotlib.pyplot as plt
 import argparse
 import requests
@@ -39,6 +40,59 @@ from . import fixXreacs
 from moose.neuroml.NeuroML import NeuroML
 from moose.neuroml.ChannelML import ChannelML
 from . import context
+
+_cmd_queue = queue.Queue()
+_sim_flags = {
+    'stop': False, 'reset_pending': False,
+    'last_status_wallclock': 0.0,
+    'data_channel_id': None,
+}
+_STATUS_URL   = "http://127.0.0.1:5000/internal/push_data"
+_STATUS_TOKEN = os.environ.get('JARDESIGNER_INTERNAL_TOKEN', '')
+
+def _stdin_reader():
+    for line in sys.stdin:
+        _cmd_queue.put(line)
+
+def _send_time_update_async(sim_time):
+    channel_id = _sim_flags['data_channel_id']
+    if not channel_id:
+        return
+    def _post():
+        try:
+            requests.post(_STATUS_URL,
+                          json={"data_channel_id": channel_id,
+                                "payload": {"type": "sim_time_update",
+                                            "currentTime": sim_time}},
+                          headers={'X-Internal-Token': _STATUS_TOKEN},
+                          timeout=1.0)
+        except Exception:
+            pass
+    threading.Thread(target=_post, daemon=True).start()
+
+def _pyrun_check():
+    # Check for stop/reset commands from the client
+    try:
+        line = _cmd_queue.get_nowait()
+        try:
+            command_data = json.loads(line)
+            cmd = command_data.get('command')
+            if cmd in ('stop', 'reset'):
+                _sim_flags['stop'] = True
+                if cmd == 'reset':
+                    _sim_flags['reset_pending'] = True
+                moose.stop()
+            else:
+                _cmd_queue.put(line)
+        except Exception:
+            _cmd_queue.put(line)
+    except queue.Empty:
+        pass
+    # Wallclock-gated time update: at most one every 0.5 s
+    now = time.time()
+    if now - _sim_flags['last_status_wallclock'] >= 0.5:
+        _sim_flags['last_status_wallclock'] = now
+        _send_time_update_async(moose.element('/clock').currentTime)
 
 knownFieldInfo = {
     'Vm': {'fieldScale': 1000, 'dataUnits': 'mV', 
@@ -304,7 +358,11 @@ class JarDesigner:
         try:
             data = addDefaultsRecursive( data, schema )
             jsonschema.validate(instance=data, schema=schema)
-            applyModifiers( data, modifiers )
+            if len( modifiers ) > 0:
+                applyModifiers( data, modifiers )
+                # Clean up and check all over again.
+                data = addDefaultsRecursive( data, schema )
+                jsonschema.validate(instance=data, schema=schema)
         except jsonschema.exceptions.ValidationError as e:
             print(f"{jsonFile} fails to pass schema: {e}")
             quit()
@@ -425,6 +483,17 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
     ################################################################
     # Some utility functions for building prototypes.
     ################################################################
+
+    def _safe_session_path( self, source ):
+        """Return the resolved path of source within sessionDir, or raise BuildError."""
+        session_real = os.path.realpath( self.sessionDir )
+        resolved = os.path.realpath( os.path.join( self.sessionDir, source ) )
+        if not ( resolved == session_real or resolved.startswith( session_real + os.sep ) ):
+            raise BuildError(
+                "Source file '" + source + "' must be within the session directory."
+            )
+        return resolved
+
     # Return true if it is a function.
     def buildProtoFromFunction( self, func, protoName ):
         if callable( func ):
@@ -439,12 +508,24 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         modPos = func.rfind( "." )
         if ( modPos != -1 ): # Function is in a file, load and check
             resolvedPath = os.path.realpath( func[0:modPos] )
+
+            # Only permit loading from the built-in library dir or session dir.
+            jardes_dir = os.path.dirname(os.path.realpath(__file__))
+            allowed_dirs = [jardes_dir]
+            if hasattr(self, 'sessionDir') and self.sessionDir:
+                allowed_dirs.append(os.path.realpath(self.sessionDir))
+            if not any(resolvedPath == d or resolvedPath.startswith(d + os.sep)
+                       for d in allowed_dirs):
+                raise BuildError(
+                    protoName + ": source file '" + func[0:modPos] +
+                    "' must be within the session or built-in library directory."
+                )
+
             pathTokens = resolvedPath.split('/')
             pathTokens = ['/'] + pathTokens
             modulePath = os.path.realpath(os.path.join(*pathTokens[:-1]))
             moduleName = pathTokens[-1]
             funcName = func[modPos+1:bracePos]
-
 
             moduleFilePath = os.path.join(modulePath, f"{moduleName}.py")
 
@@ -461,6 +542,8 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                 else:
                     print(f"Could not load module: {moduleName}")
                     return False
+            except BuildError:
+                raise
             except Exception as e:
                 print(f"Error loading module {moduleName}: {e}")
                 return False
@@ -554,8 +637,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             elif ptype == 'file':
                 fpath = pp['source']
                 if self.sessionDir != None:
-                    fpath = self.sessionDir + "/" + fpath
-                print( "Server log: Loading cell morpho file: ", fpath )
+                    fpath = self._safe_session_path( fpath )
                 self._loadElec( fpath, 'cell' )
             elif ptype == 'in_memory':
                 self.inMemoryProto( "cell", pp )
@@ -649,13 +731,13 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                     #self.chemid = moose.element( '/library/' + cp['name'] )
                     comptlist = moose.wildcardFind( '/library/##[ISA=ChemCompt]' )
                     if len( comptlist ) == 0:
-                        print("loadChem: No compartment found in file: ", fname)
+                        print("loadChem: No compartment found in file: ", cp['source'])
                         return
                     self.comptDict.update( {cc.name:cc.path for cc in comptlist} )
                 elif ctype in ['kkit', 'sbml']:
                     sourceFile = cp['source']
                     if self.sessionDir != None:
-                        sourceFile = self.sessionDir + "/" + sourceFile
+                        sourceFile = self._safe_session_path( sourceFile )
                     self._loadChem( sourceFile, cp['name'] )
                     #self.chemid = moose.element( '/library/' + cp['name'] )
                 #elif ctype == 'in_memory':
@@ -833,7 +915,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         if meshType == 'dend':
             mesh = moose.NeuroMesh( '/model/chem/' + chemSrc )
             mesh.geometryPolicy = 'cylinder'
-            mesh.separateSpines = 0
+            mesh.separateSpines = bool(0)
         elif meshType == 'spine':
             mesh = self.buildSpineMesh( argList, newChemId, comptDict )
         elif meshType == 'psd':
@@ -861,7 +943,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             moose.le( '/model/elec' )
             raise BuildError( "Error: buildSpineMesh: Missing parent NeuroMesh '{}' for spine '{}'".format( dendMeshName, chemSrc ) )
         #print( "COMPT DICT ============", comptDict )
-        moose.element(dendMesh).separateSpines = 1
+        moose.element(dendMesh).separateSpines = bool(1)
         mesh = moose.SpineMesh( '/model/chem/' + chemSrc )
         moose.connect( dendMesh, 'spineListOut', mesh, 'spineList' )
         return mesh
@@ -913,7 +995,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         mesh.isMembraneBound = True
         mesh.rScale = radiusRatio
         if meshType == 'endo_axial':
-            mesh.doAxialDiffusion = 1
+            mesh.doAxialDiffusion = bool(1)
             mesh.rPower = 0.5
             mesh.aPower = 0.5
             mesh.aScale = radiusRatio * radiusRatio
@@ -1051,16 +1133,22 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
     ################################################################
     # Here we set up the plots. Dummy for cases that don't match conditions
     ################################################################
-    def _collapseElistToPathAndClass( self, comptList, path, className ):
+    def _collapseElistToPathAndClass( self, comptList, relpath, className ):
+        """Return the child objects found at relpath inside each compartment,
+        filtered to those that are instances of className.  Compartments that
+        lack the child, and root '/' dummy placeholders returned by
+        compartmentsFromExpression for non-matching compartments, are silently
+        skipped."""
         dummy = moose.element( '/' )
-        ret = [ dummy ] * len( comptList )
-        j = 0
-        for i in comptList:
-            if moose.exists( i.path + '/' + path ):
-                obj = moose.element( i.path + '/' + path )
+        ret = []
+        for compt in comptList:
+            if compt == dummy:
+                continue
+            child_path = compt.path + '/' + relpath
+            if moose.exists( child_path ):
+                obj = moose.element( child_path )
                 if obj.isA[ className ]:
-                    ret[j] = obj
-            j += 1
+                    ret.append( obj )
         return ret
 
     # Utility function for doing lookups for objects.
@@ -1193,13 +1281,13 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                         tabs.vec.threshold = -0.02 # Threshold for classifying Vm as a spike.
                         tabs.vec.useSpikeMode = True # spike detect mode on
 
-            vtabs = moose.vec( tabs )
-            q = 0
-            for p in [ x for x in plotObj if x != dummy ]:
-                #print( p.path, plotField, q )
-                moose.connect( vtabs[q], 'requestOut', p, plotField )
-                objList.append( p )
-                q += 1
+                vtabs = moose.vec( tabs )
+                q = 0
+                for p in [ x for x in plotObj if x != dummy ]:
+                    #print( p.path, plotField, q )
+                    moose.connect( vtabs[q], 'requestOut', p, plotField )
+                    objList.append( p )
+                    q += 1
 
     def _buildMoogli( self ):
         if not hasattr( self, 'moogli' ):
@@ -1218,6 +1306,8 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             dendCompts = self.elecid.compartmentsFromExpression[ pair ]
             #spineCompts = self.elecid.spinesFromExpression[ pair ]
             dendObj, mooField = self._parseComptField( dendCompts, i, knownFields )
+            dummy = moose.element( '/' )
+            dendObj = [ obj for obj in dendObj if obj != dummy ]
             numMoogli = len( dendObj )
             iObj = DictToClass( i ) # Used as 'args' in makeMoogli
             pr = moose.PyRun( '/model/moogli_' + groupId )
@@ -1763,7 +1853,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                 func = moose.Function( funcname )
                 func.expr = i['expr']
                 #func.expr = expr
-                func.doEvalAtReinit = 1
+                func.doEvalAtReinit = bool(1)
                 for q in stimObj:
                     moose.connect( func, 'valueOut', q, stimField )
                     #print( "connecting stim: ", func.path, q.path + "[", q.dataIndex, "]." + stimField )
@@ -2037,8 +2127,12 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         #comptlist = moose.wildcardFind( chem.path + '/##[ISA=ChemCompt]' )
         comptlist = moose.wildcardFind( '/library/##[ISA=ChemCompt]' )
         if len( comptlist ) == 0:
+            # Insert a compartment here
             print("Error: loadChem: No compartment found in file: ", fname)
             return
+        elif len( comptlist ) == 1 and comptlist[0].name == "cell":
+            comptlist[0].name = chemName
+
         fixXreacs.fixXreacs( chem.path )
         self.comptDict.update( {cc.name:cc.path for cc in comptlist } )
         #print( f"Loaded chem file {fname} to {chemName}, comptDic={self.comptDict}" )
@@ -2164,90 +2258,45 @@ def randomPlacementFunc( numModels, idx ):
     nx = int( np.sqrt( numModels ) )
     return np.random.random()*0.5e-3, np.random.random()*0.5e-3, 0.0
 
-# ============================================================================
-# Pause/Resume Threading Support
-# ============================================================================
-_simulation_thread = None
-_is_paused = False
-_remaining_runtime = 0
-_target_simtime = 0
-
-def _run_simulation(rdes, runtime):
-    """Run MOOSE simulation in background thread."""
-    global _remaining_runtime, _target_simtime, _is_paused
-    
-    start_simtime = moose.element("/clock").currentTime
-    _target_simtime = start_simtime + runtime
-    
-    moose.start(runtime)
-    
-    current_simtime = moose.element("/clock").currentTime
-    _remaining_runtime = max(0, _target_simtime - current_simtime)
-    
-    if _remaining_runtime <= 1e-9 and not _is_paused:
-        rdes.display()
-        time.sleep(0.1)
-        rdes.runMooView.notifySimulationEnd(rdes.dataChannelId)
-
 def serverCommandLoop( rdes ):
-    global _simulation_thread, _is_paused, _remaining_runtime
-    
-    # This loop will wait for commands from server.py via stdin
-    for line in sys.stdin:
+    reader_thread = threading.Thread(target=_stdin_reader, daemon=True)
+    reader_thread.start()
+    while True:
         try:
-            # Parse the command, which is expected to be a JSON string
+            line = _cmd_queue.get()
             command_data = json.loads(line)
             command = command_data.get("command")
 
             if command == "start":
                 runtime = command_data.get("params", {}).get("runtime", rdes.runtime)
-                if moose.element("/clock").currentTime == 0:
-                    if hasattr(rdes, 'moogli') and len(rdes.moogli) > 0:
-                        rdes.runMooView.sendSceneGraph("run")
+                _sim_flags['stop'] = False
+                _sim_flags['reset_pending'] = False
+                _sim_flags['last_status_wallclock'] = 0.0
+                _sim_flags['data_channel_id'] = rdes.dataChannelId
+                if moose.element( "/clock" ).currentTime == 0:
+                    if hasattr( rdes, 'moogli' ) and len(rdes.moogli) > 0:
+                        rdes.runMooView.sendSceneGraph( "run" )
+                moose.start(runtime)
+                stopped = _sim_flags['stop']
+                reset_pending = _sim_flags['reset_pending']
+                _sim_flags['stop'] = False
+                _sim_flags['reset_pending'] = False
+                rdes.display()
+                time.sleep(0.1)
+                rdes.runMooView.notifySimulationEnd( rdes.dataChannelId )
+                if reset_pending:
+                    moose.reinit()
 
-                _is_paused = False
-                _remaining_runtime = runtime
-
-                _simulation_thread = threading.Thread(
-                    target=_run_simulation,
-                    args=(rdes, runtime),
-                    daemon=True
-                )
-                _simulation_thread.start()
-
-            elif command == "pause":
-                if _simulation_thread and _simulation_thread.is_alive():
-                    _is_paused = True
-                    moose.stop()
-                    _simulation_thread.join(timeout=2.0)
-                    print(f"Paused at t={moose.element('/clock').currentTime:.4f}s", flush=True)
-
-            elif command == "resume":
-                if _is_paused and _remaining_runtime > 1e-9:
-                    _is_paused = False
-                    _simulation_thread = threading.Thread(
-                        target=_run_simulation,
-                        args=(rdes, _remaining_runtime),
-                        daemon=True
-                    )
-                    _simulation_thread.start()
-                    print("Simulation resumed", flush=True)
+            elif command == "stop":
+                _sim_flags['stop'] = True
+                moose.stop()
 
             elif command == "reset":
-                if _simulation_thread and _simulation_thread.is_alive():
-                    moose.stop()
-                    _simulation_thread.join(timeout=2.0)
-                _is_paused = False
-                _remaining_runtime = 0
                 moose.reinit()
 
             elif command == "quit":
-                if _simulation_thread and _simulation_thread.is_alive():
-                    moose.stop()
-                    _simulation_thread.join(timeout=2.0)
                 print("Received 'quit' command. Exiting.")
                 break
-
             else:
                 print(f"Warning: Unknown command '{command}'")
 
@@ -2287,7 +2336,13 @@ def main():
             #rdes._buildReactionGraph()
             rdes.setupMooView.sendSceneGraph( "setup", meshMols=rdes.meshMols, reacGraph = reacGraph )
             #print( "jardesigner.py: sent SceneGraph1 with meshMols:", rdes.meshMols )
-    
+            import __main__
+            __main__._pyrun_check = _pyrun_check
+            ctrl = moose.PyRun('/jardes_ctrl')
+            ctrl.runString = '_pyrun_check()'
+            ctrl.tick = 19
+            moose.setClock(19, 0.1)
+
         moose.reinit()
         if args.run and args.data_channel_id == None: # local run
             #print( "Running locally")

@@ -4,14 +4,17 @@ import {
     Dialog, DialogTitle, DialogContent, DialogActions, IconButton
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import GitHubIcon from '@mui/icons-material/GitHub';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 // Importing logos
 import jardesLogo from '../../assets/jardes_logo.png';
 import mooseLogo from '../../assets/moose_logo.png';
 
 const API_BASE_URL = `http://${window.location.hostname}:5000`;
+const MOOSE_VERSION = '4.2.0 "Kalakand"';
 
-const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, clientId }) => {
+const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, clientId, onMissingFilesWarned }) => {
     // --- Metadata State ---
     const [creator, setCreator] = useState('');
     const [license, setLicense] = useState('CC BY');
@@ -22,8 +25,25 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
     // --- Dialog State ---
     const [showAboutJardesigner, setShowAboutJardesigner] = useState(false);
     const [showAboutMoose, setShowAboutMoose] = useState(false);
+    const [mooseVersion, setMooseVersion] = useState(MOOSE_VERSION);
+    const [missingFiles, setMissingFiles] = useState([]);
+    const [showMissingFilesDialog, setShowMissingFilesDialog] = useState(false);
 
-    const fileInputRef = useRef();
+    const loadInputRef = useRef();
+
+
+    // --- Fetch latest MOOSE version from GitHub when dialog opens ---
+    useEffect(() => {
+        if (!showAboutMoose) return;
+        fetch('https://api.github.com/repos/mooseneuro/moose-core/releases/latest')
+            .then(res => res.ok ? res.json() : Promise.reject())
+            .then(data => {
+                // release name is e.g. '4.2.0 "Kalakand"', tag is e.g. 'v4.2.0'
+                const version = data.name || data.tag_name?.replace(/^v/, '') || MOOSE_VERSION;
+                setMooseVersion(version);
+            })
+            .catch(() => {}); // silently keep the hardcoded fallback
+    }, [showAboutMoose]);
 
     // --- Sync State with Config ---
     useEffect(() => {
@@ -53,34 +73,40 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
         }, 500);
     };
 
-    const handleLoadModel = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
+    const getExternalFileRefs = (parsed) => {
+        const refs = [];
+        if (parsed.cellProto?.type === 'file' && parsed.cellProto?.source)
+            refs.push({ file: parsed.cellProto.source, where: 'Morphology → Browse Library → Upload or select from list' });
+        for (const cp of parsed.chemProto || [])
+            if ((cp.type === 'sbml' || cp.type === 'SBML' || cp.type === 'kkit') && cp.source)
+                refs.push({ file: cp.source, where: 'Signaling → Browse Library → Upload or select from list' });
+        for (const cp of parsed.chanProto || [])
+            if (cp.type === 'neuroml' && cp.source)
+                refs.push({ file: cp.source, where: 'Channels → Browse Library → Upload or select from list' });
+        return refs;
+    };
 
-        const nameWithoutExt = file.name.replace(/\.json$/i, "");
-        setModelFileName(nameWithoutExt);
-
+    const handleLoadModelJson = (file) => {
+        setModelFileName(file.name.replace(/\.json$/i, ""));
         const fileSystemTime = new Date(file.lastModified).toLocaleString();
-
         const reader = new FileReader();
         reader.onload = (e) => {
             const fileContent = e.target.result;
             try {
                 const parsed = JSON.parse(fileContent);
                 const info = parsed.fileinfo || {};
-                
-                // --- Update Properties from Loaded File ---
                 setCreator(info.creator || '');
                 setLicense(info.licence || 'CC BY');
                 setModelNotes(info.modelNotes || '');
-
-                const jsonTime = info.dateTime;
-                const displayTime = jsonTime || fileSystemTime || new Date().toLocaleString();
-                
-                setLastModified(displayTime);
-
-                if (setJsonContent) {
-                    setJsonContent(fileContent);
+                setLastModified(info.dateTime || fileSystemTime || new Date().toLocaleString());
+                if (setJsonContent) setJsonContent(fileContent);
+                const refs = getExternalFileRefs(parsed);
+                if (refs.length > 0) {
+                    setMissingFiles(refs);
+                    setShowMissingFilesDialog(true);
+                    if (onMissingFilesWarned) onMissingFilesWarned(true);
+                } else {
+                    if (onMissingFilesWarned) onMissingFilesWarned(false);
                 }
             } catch (err) {
                 console.error("Error parsing JSON:", err);
@@ -88,9 +114,42 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
             }
         };
         reader.readAsText(file);
-        
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
+    };
+
+
+    const handleLoadProject = async (file) => {
+        if (!clientId) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            const response = await fetch(`${API_BASE_URL}/upload_project/${clientId}`, {
+                method: 'POST',
+                body: formData,
+            });
+            if (!response.ok) throw new Error(await response.text());
+            const data = await response.json();
+            const parsed = JSON.parse(data.json);
+            const info = parsed.fileinfo || {};
+            setCreator(info.creator || '');
+            setLicense(info.licence || 'CC BY');
+            setModelNotes(info.modelNotes || '');
+            setLastModified(info.dateTime || new Date().toLocaleString());
+            setModelFileName(file.name.replace(/\.jardes$/i, ''));
+            if (setJsonContent) setJsonContent(data.json);
+        } catch (err) {
+            console.error('Error loading project:', err);
+            alert(`Failed to load project: ${err.message}`);
+        }
+    };
+
+    const handleLoadFile = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        if (loadInputRef.current) loadInputRef.current.value = '';
+        if (file.name.toLowerCase().endsWith('.jardes')) {
+            handleLoadProject(file);
+        } else {
+            handleLoadModelJson(file);
         }
     };
 
@@ -146,46 +205,42 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
         }
     };
 
-    const handleDownloadProject = async () => {
-        if (!clientId) {
-            alert("Client ID is missing. Cannot download project.");
-            return;
-        }
+    const _triggerBlobDownload = (blob, fileName) => {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+    };
 
+    const handleDownloadProject = async () => {
+        if (!clientId) { alert("Client ID is missing."); return; }
+        const base = modelFileName || 'model';
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/download_project_smart/${clientId}?basename=${encodeURIComponent(base)}`
+            );
+            if (!response.ok) throw new Error(await response.text());
+            _triggerBlobDownload(await response.blob(), `${base}.jardes`);
+        } catch (error) {
+            console.error("Error saving project:", error);
+            alert(`Failed to save project: ${error.message}`);
+        }
+    };
+
+    const handleDownloadProjectHistory = async () => {
+        if (!clientId) { alert("Client ID is missing."); return; }
+        const base = modelFileName || 'model';
         try {
             const response = await fetch(`${API_BASE_URL}/download_project/${clientId}`);
-            
-            if (!response.ok) {
-                const errText = await response.text();
-                throw new Error(errText || response.statusText);
-            }
-
-            const blob = await response.blob();
-            
-            // Format: jardes_YYYY-MM-DD_HH-MM-SS.zip
-            const now = new Date();
-            const dateStr = now.getFullYear() + "-" + 
-                            String(now.getMonth() + 1).padStart(2, '0') + "-" + 
-                            String(now.getDate()).padStart(2, '0') + "_" + 
-                            String(now.getHours()).padStart(2, '0') + "-" + 
-                            String(now.getMinutes()).padStart(2, '0') + "-" + 
-                            String(now.getSeconds()).padStart(2, '0');
-            
-            const fileName = `jardes_${dateStr}.zip`;
-
-            // Trigger Download
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(url);
-
+            if (!response.ok) throw new Error(await response.text());
+            _triggerBlobDownload(await response.blob(), `${base}_history.jardes`);
         } catch (error) {
-            console.error("Error downloading project:", error);
-            alert(`Failed to download project: ${error.message}`);
+            console.error("Error saving project history:", error);
+            alert(`Failed to save project history: ${error.message}`);
         }
     };
 
@@ -212,7 +267,7 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
         </Grid>
     );
 
-    const InfoDialog = ({ open, onClose, title, logo, content }) => (
+    const InfoDialog = ({ open, onClose, title, logo, content, links }) => (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 {title}
@@ -226,6 +281,20 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                     {content.map((item, index) => (
                         <li key={index} style={{ marginBottom: '12px' }}>
                             <Typography variant="body1" sx={{ fontSize: '1.1rem' }}>{item}</Typography>
+                        </li>
+                    ))}
+                    {links && links.map(({ label, href, icon }) => (
+                        <li key={href} style={{ marginBottom: '12px', listStyle: 'none' }}>
+                            <Box
+                                component="a"
+                                href={href}
+                                target="_blank"
+                                rel="noreferrer"
+                                sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'inherit', textDecoration: 'none', ':hover': { textDecoration: 'underline' } }}
+                            >
+                                {icon === 'github' ? <GitHubIcon fontSize="small" /> : <OpenInNewIcon fontSize="small" />}
+                                <Typography variant="body1" sx={{ fontSize: '1.1rem' }}>{label}</Typography>
+                            </Box>
                         </li>
                     ))}
                 </Box>
@@ -242,22 +311,22 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
             {/* === Section 1: Main Actions === */}
             <Grid container spacing={1}>
                 <MenuButton label="New" onClick={handleNew} />
-                
+
                 <Grid item xs={12}>
                     <Button
                         variant="contained"
                         fullWidth
                         sx={{ bgcolor: '#e0e0e0', color: 'black', justifyContent: 'flex-start', pl: 2, ':hover': { bgcolor: '#bdbdbd' } }}
-                        onClick={() => fileInputRef.current?.click()}
+                        onClick={() => loadInputRef.current?.click()}
                     >
                         Load Model
                     </Button>
-                    <input type="file" accept=".json" style={{ display: 'none' }} ref={fileInputRef} onChange={handleLoadModel} />
+                    <input type="file" accept=".json,.jardes" style={{ display: 'none' }} ref={loadInputRef} onChange={handleLoadFile} />
                 </Grid>
 
-                <MenuButton label="Load Tutorial" onClick={() => {}} /> 
-                <MenuButton label="Save Model" onClick={handleSaveModel} />
-                <MenuButton label="Download Project" onClick={handleDownloadProject} /> 
+                <MenuButton label="Save Model" onClick={handleDownloadProject} />
+                <MenuButton label="Save Model JSON" onClick={handleSaveModel} />
+                <MenuButton label="Save Model History" onClick={handleDownloadProjectHistory} />
             </Grid>
 
             <Divider sx={{ my: 2, borderBottomWidth: 2 }} />
@@ -353,8 +422,10 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                     "Jardesigner version: currently 1.1",
                     "Copyright (C) U.S. Bhalla, NCBS-TIFR, and CHINTA 2026",
                     "Licensed under the GNU GPL Version 3.",
-                    "Project code is on GitHub at \"https://github.com/upibhalla/jardesigner\"",
-                    "Jardesigner documentation is at \"https://github.com/Pragathii-R/Jardesigner-Overview\""
+                ]}
+                links={[
+                    { label: 'Project Code', href: 'https://github.com/mooseneuro/jardesigner', icon: 'github' },
+                    { label: 'Jardesigner Documentation', href: 'https://www.mooseneuro.org/docs/html/user/py/quickstart/qs_GUI.html', icon: 'docs' },
                 ]}
             />
 
@@ -365,13 +436,63 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                 logo={mooseLogo}
                 content={[
                     "MOOSE is the Multiscale Object-Oriented Simulation Environment for modeling subcellular signaling, single neuron physiology, detailed and abstract neuronal networks.",
-                    "MOOSE version is currently 4.0.0, \"Jalebi\"",
+                    `MOOSE version is currently ${mooseVersion}`,
                     "Copyright (C) U.S. Bhalla, NCBS-TIFR, and CHINTA 2026",
                     "Licensed under the GNU GPL Version 3.",
-                    "Project code is on GitHub at \"https://github.com/BhallaLab/moose\"",
-                    "MOOSE documentation is at \"https://moose.ncbs.res.in/\""
+                ]}
+                links={[
+                    { label: 'Project Code', href: 'https://github.com/mooseneuro/moose-core', icon: 'github' },
+                    { label: 'MOOSE Documentation', href: 'https://www.mooseneuro.org/docs/html/index.html', icon: 'docs' },
                 ]}
             />
+
+
+            <Dialog open={showMissingFilesDialog} onClose={() => setShowMissingFilesDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    External files required
+                    <IconButton size="small" onClick={() => setShowMissingFilesDialog(false)}><CloseIcon /></IconButton>
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" sx={{ mb: 2 }}>
+                        This model references files that are not embedded in the JSON.
+                        Load them from their respective panels:
+                    </Typography>
+                    {missingFiles.map(({ file, where }, i) => (
+                        <Box key={i} sx={{ mb: 1 }}>
+                            <Typography variant="body2">
+                                {file} --- {where}.
+                            </Typography>
+                        </Box>
+                    ))}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowMissingFilesDialog(false)}>OK</Button>
+                </DialogActions>
+            </Dialog>
+
+
+            <Dialog open={showMissingFilesDialog} onClose={() => setShowMissingFilesDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    External files required
+                    <IconButton size="small" onClick={() => setShowMissingFilesDialog(false)}><CloseIcon /></IconButton>
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" sx={{ mb: 2 }}>
+                        This model references files that are not embedded in the JSON.
+                        Load them from their respective panels:
+                    </Typography>
+                    {missingFiles.map(({ file, where }, i) => (
+                        <Box key={i} sx={{ mb: 1 }}>
+                            <Typography variant="body2">
+                                {file} --- {where}.
+                            </Typography>
+                        </Box>
+                    ))}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowMissingFilesDialog(false)}>OK</Button>
+                </DialogActions>
+            </Dialog>
 
         </Box>
     );

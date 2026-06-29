@@ -216,7 +216,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 **/OLD/
-/CELL_MODELS
 /temp_configs
 /TestModels
 /__pycache__

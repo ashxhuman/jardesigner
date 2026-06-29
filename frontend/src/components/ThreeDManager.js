@@ -100,17 +100,10 @@ export default class ThreeDManager {
   }
 
   setReflectivity(isEnabled) {
-    // --- UPDATED REFLECTIVITY ---
-    // Instead of metalness (which makes things dark without an environment map),
-    // we use low roughness to create a "shiny plastic" look, similar to VPython's default shininess.
-    const metalness = 0.0; 
-    const roughness = isEnabled ? 0.2 : 0.8; // 0.2 = shiny/glossy, 0.8 = matte
-    
+    const shininess = isEnabled ? 100 : 30;
     this.sceneObjects.forEach(obj => {
         if (obj.material) {
-            obj.material.metalness = metalness;
-            obj.material.roughness = roughness;
-            obj.material.needsUpdate = true;
+            obj.material.shininess = shininess;
         }
     });
   }
@@ -191,27 +184,30 @@ export default class ThreeDManager {
         const normalizedValue = (primitive.value - entity.vmin) / (entity.vmax - entity.vmin);
         const materialColor = getColor(normalizedValue, config.colormap, true);
         
-        // Default to Matte (roughness 0.8) initially
         const emissiveColor = new THREE.Color(materialColor).multiplyScalar(EMISSIVE_FACTOR);
-        const material = new THREE.MeshStandardMaterial({
+        const material = new THREE.MeshPhongMaterial({
             color: materialColor,
             emissive: emissiveColor,
             transparent: true,
             opacity: entity.transparency || 1.0,
-            metalness: 0.0,
-            roughness: 0.8,
+            shininess: 30,
         });
 
         const shapeObject = createShape(primitive, material);
 
         if (shapeObject) {
-            shapeObject.userData = { 
-                entityName: entity.groupId, 
-				shapeIndex: i, 
+            const isMoogli = primitive.type === 'moogli';
+            const isNonSomaMoogli = isMoogli && primitive.simPath !== 'soma';
+            shapeObject.userData = {
+                entityName: entity.groupId,
+				shapeIndex: i,
 				originalValue: primitive.value,
                 originalPosition: shapeObject.position.clone(),
                 simPath: primitive.simPath,
+                isMoogli,
+                isNonSomaMoogli,
             };
+            if (isNonSomaMoogli) shapeObject.visible = false;
 
             if (shapeObject.type === 'Mesh') {
                 if (shapeObject.geometry.type === 'SphereGeometry') {
@@ -254,7 +250,21 @@ export default class ThreeDManager {
       this.sceneObjects.forEach(obj => {
           const groupId = obj.userData.entityName;
           if (visibilityMap.hasOwnProperty(groupId)) {
-              obj.visible = visibilityMap[groupId];
+              // Non-soma moogli icons stay hidden unless showAllMoogliIcons is on
+              if (obj.userData.isNonSomaMoogli && !this._showAllMoogliIcons) {
+                  obj.visible = false;
+              } else {
+                  obj.visible = visibilityMap[groupId];
+              }
+          }
+      });
+  }
+
+  setShowAllMoogliIcons(showAll) {
+      this._showAllMoogliIcons = showAll;
+      this.sceneObjects.forEach(obj => {
+          if (obj.userData.isNonSomaMoogli) {
+              obj.visible = showAll;
           }
       });
   }
@@ -273,7 +283,11 @@ export default class ThreeDManager {
     this.sceneObjects.forEach(obj => {
         const config = this.entityConfigs.get(obj.userData.entityName);
         if (config) {
-            const normalizedValue = (obj.userData.originalValue - config.vmin) / (config.vmax - config.vmin);
+            const physValue = obj.userData.lastPhysicalValue !== undefined
+                ? obj.userData.lastPhysicalValue
+                : obj.userData.originalValue;
+            const currentRange = (config.vmax - config.vmin) || 1;
+            const normalizedValue = Math.max(0, Math.min(1, (physValue - config.vmin) / currentRange));
             const newColor = getColor(normalizedValue, config.colormap, true);
             if (obj.material) {
                 obj.material.color.set(newColor);
@@ -284,22 +298,27 @@ export default class ThreeDManager {
   }
 
   updateSceneData(frameData) {
-    const { groupId, data } = frameData;
+    const { groupId, data_f32, count } = frameData;
     const entityConfig = this.entityConfigs.get(groupId);
     if (!entityConfig) { return; }
-    const { vmin, vmax, colormap } = entityConfig;
+    const { colormap, vmin, vmax } = entityConfig;
+    const currentRange = (vmax - vmin) || 1;
     const relevantObjects = this.sceneObjects.filter(obj => obj.userData.entityName === groupId);
-    data.forEach((value, index) => {
-        if (index < relevantObjects.length) {
-            const obj = relevantObjects[index];
-            const normalizedValue = (value - vmin) / (vmax - vmin);
-            const newColor = getColor(normalizedValue, colormap, true);
-            if (obj.material) {
-                obj.material.color.set(newColor);
-                obj.material.emissive.set(newColor).multiplyScalar(EMISSIVE_FACTOR);
-            }
+    const binary = atob(data_f32);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const f32 = new Float32Array(bytes.buffer);
+    const n = Math.min(count ?? f32.length, relevantObjects.length);
+    for (let i = 0; i < n; i++) {
+        const normalizedValue = Math.max(0, Math.min(1, (f32[i] - vmin) / currentRange));
+        const newColor = getColor(normalizedValue, colormap, true);
+        const obj = relevantObjects[i];
+        obj.userData.lastPhysicalValue = f32[i];
+        if (obj.material) {
+            obj.material.color.set(newColor);
+            obj.material.emissive.set(newColor).multiplyScalar(EMISSIVE_FACTOR);
         }
-    });
+    }
   }
 
   // --- MODIFIED handleClick (FIX for Request 3) ---
@@ -469,7 +488,10 @@ export default class ThreeDManager {
 
   animate = () => {
     requestAnimationFrame(this.animate);
-    
+
+    // Skip rendering when inside a display:none tab — avoids starving other views
+    if (!this.container.offsetParent) return;
+
     const delta = this.clock.getDelta();
 
     // --- MANUAL AUTO-ROTATE ---
