@@ -25,7 +25,8 @@ export default class ThreeDManager {
     this.world = new THREE.Group();
     this.scene.add(this.world);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.renderer.setClearColor(0x000000, 0); // fully transparent — CSS bg shows through
     this.container.appendChild(this.renderer.domElement);
     this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 1e-9, 1e3);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -49,22 +50,34 @@ export default class ThreeDManager {
 
     // Lighting: VPython directions, boosted ambient and fill for more brightness.
     // A: Ambient at 0x5d5d5d (37%) — midpoint between original 20% and boosted 53%.
-    this.world.add(new THREE.AmbientLight(0x5d5d5d));
+    this.ambientLight = new THREE.AmbientLight(0x5d5d5d);
+    this.world.add(this.ambientLight);
 
     // Main light (direction <0.22, 0.44, 0.88>, 80% gray)
-    const light1 = new THREE.DirectionalLight(0xcccccc, 1.0);
-    light1.position.set(0.22, 0.44, 0.88).normalize();
-    this.world.add(light1);
+    this.light1 = new THREE.DirectionalLight(0xcccccc, 1.0);
+    this.light1.position.set(0.22, 0.44, 0.88).normalize();
+    this.world.add(this.light1);
 
     // B: Fill light at 0x737373 (45%) — midpoint between original 30% and boosted 60%.
-    const light2 = new THREE.DirectionalLight(0x737373, 1.0);
-    light2.position.set(-0.88, -0.22, -0.44).normalize();
-    this.world.add(light2);
+    this.light2 = new THREE.DirectionalLight(0x737373, 1.0);
+    this.light2.position.set(-0.88, -0.22, -0.44).normalize();
+    this.world.add(this.light2);
+
+    this.rimTop = new THREE.DirectionalLight(0x8899bb, 0.6);
+    this.rimTop.position.set(0, 1, 0);
+    this.world.add(this.rimTop);
+
+    this.rimBottom = new THREE.DirectionalLight(0x445566, 0.4);
+    this.rimBottom.position.set(0, -1, 0);
+    this.world.add(this.rimBottom);
+
+    this.isDark = false;
 
     this.onWindowResize = this.onWindowResize.bind(this);
     this.handleKeyDown = this.handleKeyDown.bind(this);
     this.handleClick = this.handleClick.bind(this);
-    window.addEventListener('resize', this.onWindowResize);
+    this.resizeObserver = new ResizeObserver(() => this.onWindowResize());
+    this.resizeObserver.observe(container);
     window.addEventListener('keydown', this.handleKeyDown);
     this.renderer.domElement.addEventListener('click', this.handleClick);
 
@@ -161,15 +174,15 @@ export default class ThreeDManager {
     this.entityConfigs.clear();
     this.diameterScales.clear();
 
-    // Remove existing children but keep the first 3 (Ambient + 2 Directional Lights)
-    while(this.world.children.length > 3){ 
-        const child = this.world.children[3];
+    // Remove existing children but keep the first 5 (Ambient + 2 Directional + 2 Rim Lights)
+    while(this.world.children.length > 5){
+        const child = this.world.children[5];
         this.world.remove(child);
         if(child.geometry) child.geometry.dispose();
         if(child.material) child.material.dispose();
     }
 
-    this.renderer.setClearColor(new THREE.Color(config.bg === 'default' ? '#FFFFFF' : config.bg || '#FFFFFF'));
+    // bg colour is managed by ThreeDViewer via setBgColor() — don't override here
     this.boundingBox.makeEmpty();
 
     config.drawables.forEach(entity => {
@@ -519,8 +532,21 @@ export default class ThreeDManager {
     this.renderer.render(this.scene, this.camera);
   }
 
+  setBgColor(color) {
+    this.renderer.setClearColor(new THREE.Color(color));
+  }
+
+  setThemeMode(isDark) {
+    this.isDark = isDark;
+    this.ambientLight.color.setHex(isDark ? 0xbbbbbb : 0x5d5d5d);
+    this.light1.intensity = isDark ? 1.8 : 1.0;
+    this.light2.intensity = isDark ? 1.4 : 1.0;
+    this.rimTop.intensity    = isDark ? 1.0 : 0.6;
+    this.rimBottom.intensity = isDark ? 0.7 : 0.4;
+  }
+
   dispose() {
-    window.removeEventListener('resize', this.onWindowResize);
+    this.resizeObserver?.disconnect();
     window.removeEventListener('keydown', this.handleKeyDown);
     this.renderer.domElement.removeEventListener('click', this.handleClick);
     if(this.container && this.renderer.domElement) {
