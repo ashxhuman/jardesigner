@@ -42,6 +42,7 @@ const DisplayWindow = (props) => {
   const [tabIndex, setTabIndex] = useState(0);
   const prevThreeDConfigSetup = useRef();
   const prevIsSimulating = useRef(false);
+  const prevDocFile = useRef(docFile);
 
   useEffect(() => {
     const hasNewSetupConfig = threeDConfigs?.setup && !prevThreeDConfigSetup.current;
@@ -50,6 +51,14 @@ const DisplayWindow = (props) => {
     }
     prevThreeDConfigSetup.current = threeDConfigs?.setup;
   }, [threeDConfigs?.setup, tabIndex]);
+
+  // Switch to Documentation tab when a docFile first appears (tutorial loaded or doc uploaded).
+  useEffect(() => {
+    if (docFile && docFile !== prevDocFile.current) {
+      setTabIndex(2);
+    }
+    prevDocFile.current = docFile;
+  }, [docFile]);
 
   // When a run starts, switch to Graph if plots are defined, else Run 3D.
   useEffect(() => {
