@@ -43,7 +43,8 @@ const initialJsonData = {
   moogli: [],
   displayMoogli: {},
   moogliEvents: [],
-  stims: []
+  stims: [],
+  docFile: ''
 };
 
 const requiredKeys = ["filetype", "version"];
@@ -502,19 +503,34 @@ export const useAppLogic = () => {
     const getChemProtos = useCallback(() => jsonData?.chemProto?.map(p => p?.name).filter(Boolean) || [], [jsonData?.chemProto]);
     const toggleMenu = (menu) => setActiveMenu(prev => (prev === menu ? null : menu));
 
+    const handleLoadTutorial = useCallback(async (name) => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/load_example/${clientId}/${encodeURIComponent(name)}`, { method: 'POST' });
+            if (!response.ok) throw new Error(await response.text());
+            const data = await response.json();
+            if (data.json) {
+                const parsed = JSON.parse(data.json);
+                updateJsonData(parsed);
+            }
+        } catch (err) {
+            console.error('Error loading tutorial:', err);
+        }
+    }, [clientId, updateJsonData]);
+
     const baseProps = {
         activeMenu, toggleMenu, jsonData, jsonContent,
         plotDataUrl, isPlotReady, plotError, isSimulating, activeSim, clientId,
         updateJsonData, setRunParameters, handleStartRun, handleResetRun,
         handleBuildAndStartRun, handleStopRun, updateJsonString,
         handleClearModel, getCurrentJsonData, getChemProtos, setActiveMenu, handleMorphologyFileChange, setWarnedAboutMissing,
-        replayTime, totalRuntime, isReplaying, replayInterval, 
+        replayTime, totalRuntime, isReplaying, replayInterval,
 		setReplayInterval, liveFrameData,
 		onStartReplay: handleStartReplay, onPauseReplay: handlePauseReplay,
         onRewindReplay: handleRewindReplay, onSeekReplay: handleSeekReplay,
         handleStartReplay, handlePauseReplay, handleRewindReplay, handleSeekReplay,
         simError, setSimError,
-        elecPaths, spinePaths
+        elecPaths, spinePaths,
+        handleLoadTutorial
     };
 
     if (isStandalone) {
