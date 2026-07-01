@@ -324,13 +324,12 @@ export const AppLayout = (props) => {
                 sx={{
                   minWidth: 56,
                   minHeight: 'auto',
-                  py: 0.5,
-                  px: 1.25,
+                  py: 0.75,
+                  px: 1.5,
                   borderRadius: 0,
-                  color: 'rgba(255,255,255,0.65)',
+                  color: '#FFFFFF',
                   fontSize: '0.875rem',
                   fontWeight: 500,
-                  textTransform: 'none',
                   '&.Mui-selected': { color: '#f5a623', fontWeight: 800 },
                   '&:hover': { backgroundColor: 'rgba(255,255,255,0.10)', color: '#FFFFFF' },
                 }}

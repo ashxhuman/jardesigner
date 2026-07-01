@@ -111,7 +111,7 @@ export const createAppTheme = (mode) => {
       MuiButton: {
         defaultProps: { variant: 'contained' },
         styleOverrides: {
-          root:         { textTransform: 'none', borderRadius: 6 },
+          root:         { borderRadius: 6 },
           sizeLarge:    { padding: '8px 20px',  fontSize: '0.9375rem' },
           sizeMedium:   { padding: '6px 16px',  fontSize: '0.875rem'  },
           sizeSmall:    { padding: '3px 10px',  fontSize: '0.8125rem' },
@@ -173,7 +173,6 @@ export const createAppTheme = (mode) => {
       MuiTab: {
         styleOverrides: {
           root: {
-            textTransform: 'none',
             fontWeight: 500,
             minHeight: 48,
             letterSpacing: '0.009em',
