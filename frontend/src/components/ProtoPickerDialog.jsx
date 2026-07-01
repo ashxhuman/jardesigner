@@ -521,7 +521,9 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                                     {displayTopTen.length === 0 && displayItems.length === 0 && (
                                         <TableRow>
                                             <TableCell colSpan={5} sx={{ textAlign: 'center', py: 6, color: 'text.secondary' }}>
-                                                No prototypes found
+                                                {selectedDb !== 'Local' && searchResults === null
+                                                    ? `Search ${selectedDb} above to find prototypes`
+                                                    : 'No prototypes found'}
                                             </TableCell>
                                         </TableRow>
                                     )}
