@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Box, Tabs, Tab, Typography, TextField, Grid, Tooltip, IconButton, Button } from '@mui/material';
+import { Box, Tabs, Tab, Typography, TextField, Grid2 as Grid, Tooltip, IconButton, Button } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
 import helpText from './MorphoMenuBox.Help.json';
@@ -222,8 +222,8 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
                     <Box>
                         <Typography variant="h6" gutterBottom>Soma</Typography>
                         <Grid container spacing={2}>
-                            <Grid item xs={6}><HelpField id="somaDia" label="Diameter (μm)" value={somaValues.somaDia} onChange={handleSomaChange} helptext={helpText.fields.soma.somaDia} /></Grid>
-                            <Grid item xs={6}><HelpField id="somaLen" label="Length (μm)" value={somaValues.somaLen} onChange={handleSomaChange} helptext={helpText.fields.soma.somaLen} /></Grid>
+                            <Grid size={6}><HelpField id="somaDia" label="Diameter (μm)" value={somaValues.somaDia} onChange={handleSomaChange} helptext={helpText.fields.soma.somaDia} /></Grid>
+                            <Grid size={6}><HelpField id="somaLen" label="Length (μm)" value={somaValues.somaLen} onChange={handleSomaChange} helptext={helpText.fields.soma.somaLen} /></Grid>
                         </Grid>
                     </Box>
                 )}
@@ -231,13 +231,13 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
                     <Box>
                         <Typography variant="h6" gutterBottom>Ball and Stick</Typography>
                         <Grid container spacing={2} rowSpacing={1.5}>
-                            <Grid item xs={12}><Typography variant="subtitle2" color="text.secondary">Soma</Typography></Grid>
-                            <Grid item xs={6}><HelpField id="somaDia" label="Diameter (μm)" value={ballAndStickValues.somaDia} onChange={handleBallAndStickChange} helptext={helpText.fields.ballAndStick.somaDia} /></Grid>
-                            <Grid item xs={6}><HelpField id="somaLen" label="Length (μm)" value={ballAndStickValues.somaLen} onChange={handleBallAndStickChange} helptext={helpText.fields.ballAndStick.somaLen} /></Grid>
-                            <Grid item xs={12} sx={{ mt: 1 }}><Typography variant="subtitle2" color="text.secondary">Dendrite</Typography></Grid>
-                            <Grid item xs={6}><HelpField id="dendDia" label="Diameter (μm)" value={ballAndStickValues.dendDia} onChange={handleBallAndStickChange} helptext={helpText.fields.ballAndStick.dendDia} /></Grid>
-                            <Grid item xs={6}><HelpField id="dendLen" label="Length (μm)" value={ballAndStickValues.dendLen} onChange={handleBallAndStickChange} helptext={helpText.fields.ballAndStick.dendLen} /></Grid>
-                            <Grid item xs={12}><HelpField id="dendNumSeg" label="Segments (#)" value={ballAndStickValues.dendNumSeg} onChange={handleBallAndStickChange} type="number" helptext={helpText.fields.ballAndStick.dendNumSeg} InputProps={{ inputProps: { min: 1, step: 2 } }} /></Grid>
+                            <Grid size={12}><Typography variant="subtitle2" color="text.secondary">Soma</Typography></Grid>
+                            <Grid size={6}><HelpField id="somaDia" label="Diameter (μm)" value={ballAndStickValues.somaDia} onChange={handleBallAndStickChange} helptext={helpText.fields.ballAndStick.somaDia} /></Grid>
+                            <Grid size={6}><HelpField id="somaLen" label="Length (μm)" value={ballAndStickValues.somaLen} onChange={handleBallAndStickChange} helptext={helpText.fields.ballAndStick.somaLen} /></Grid>
+                            <Grid size={12} sx={{ mt: 1 }}><Typography variant="subtitle2" color="text.secondary">Dendrite</Typography></Grid>
+                            <Grid size={6}><HelpField id="dendDia" label="Diameter (μm)" value={ballAndStickValues.dendDia} onChange={handleBallAndStickChange} helptext={helpText.fields.ballAndStick.dendDia} /></Grid>
+                            <Grid size={6}><HelpField id="dendLen" label="Length (μm)" value={ballAndStickValues.dendLen} onChange={handleBallAndStickChange} helptext={helpText.fields.ballAndStick.dendLen} /></Grid>
+                            <Grid size={12}><HelpField id="dendNumSeg" label="Segments (#)" value={ballAndStickValues.dendNumSeg} onChange={handleBallAndStickChange} type="number" helptext={helpText.fields.ballAndStick.dendNumSeg} InputProps={{ inputProps: { min: 1, step: 2 } }} /></Grid>
                         </Grid>
                     </Box>
                 )}
@@ -245,17 +245,17 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
                     <Box>
                         <Typography variant="h6" gutterBottom>Y Branch</Typography>
                         <Grid container spacing={2} rowSpacing={1.5}>
-                            <Grid item xs={12}><Typography variant="subtitle2" color="text.secondary">Soma</Typography></Grid>
-                            <Grid item xs={6}><HelpField id="somaDia" label="Diameter (μm)" value={yBranchValues.somaDia} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.somaDia} /></Grid>
-                            <Grid item xs={6}><HelpField id="somaLen" label="Length (μm)" value={yBranchValues.somaLen} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.somaLen} /></Grid>
-                            <Grid item xs={12} sx={{ mt: 1 }}><Typography variant="subtitle2" color="text.secondary">Dendrite Trunk</Typography></Grid>
-                            <Grid item xs={6}><HelpField id="dendDia" label="Diameter (μm)" value={yBranchValues.dendDia} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.dendDia} /></Grid>
-                            <Grid item xs={6}><HelpField id="dendLen" label="Length (μm)" value={yBranchValues.dendLen} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.dendLen} /></Grid>
-                            <Grid item xs={12}><HelpField id="dendNumSeg" label="Segments (#)" value={yBranchValues.dendNumSeg} onChange={handleYBranchChange} type="number" helptext={helpText.fields.yBranch.dendNumSeg} InputProps={{ inputProps: { min: 1, step: 1 } }} /></Grid>
-                            <Grid item xs={12} sx={{ mt: 1 }}><Typography variant="subtitle2" color="text.secondary">Daughter Branches</Typography></Grid>
-                            <Grid item xs={6}><HelpField id="branchDia" label="Diameter (μm)" value={yBranchValues.branchDia} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.branchDia} /></Grid>
-                            <Grid item xs={6}><HelpField id="branchLen" label="Length (μm)" value={yBranchValues.branchLen} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.branchLen} /></Grid>
-                            <Grid item xs={12}><HelpField id="branchNumSeg" label="Segments (#)" value={yBranchValues.branchNumSeg} onChange={handleYBranchChange} type="number" helptext={helpText.fields.yBranch.branchNumSeg} InputProps={{ inputProps: { min: 1, step: 1 } }} /></Grid>
+                            <Grid size={12}><Typography variant="subtitle2" color="text.secondary">Soma</Typography></Grid>
+                            <Grid size={6}><HelpField id="somaDia" label="Diameter (μm)" value={yBranchValues.somaDia} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.somaDia} /></Grid>
+                            <Grid size={6}><HelpField id="somaLen" label="Length (μm)" value={yBranchValues.somaLen} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.somaLen} /></Grid>
+                            <Grid size={12} sx={{ mt: 1 }}><Typography variant="subtitle2" color="text.secondary">Dendrite Trunk</Typography></Grid>
+                            <Grid size={6}><HelpField id="dendDia" label="Diameter (μm)" value={yBranchValues.dendDia} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.dendDia} /></Grid>
+                            <Grid size={6}><HelpField id="dendLen" label="Length (μm)" value={yBranchValues.dendLen} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.dendLen} /></Grid>
+                            <Grid size={12}><HelpField id="dendNumSeg" label="Segments (#)" value={yBranchValues.dendNumSeg} onChange={handleYBranchChange} type="number" helptext={helpText.fields.yBranch.dendNumSeg} InputProps={{ inputProps: { min: 1, step: 1 } }} /></Grid>
+                            <Grid size={12} sx={{ mt: 1 }}><Typography variant="subtitle2" color="text.secondary">Daughter Branches</Typography></Grid>
+                            <Grid size={6}><HelpField id="branchDia" label="Diameter (μm)" value={yBranchValues.branchDia} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.branchDia} /></Grid>
+                            <Grid size={6}><HelpField id="branchLen" label="Length (μm)" value={yBranchValues.branchLen} onChange={handleYBranchChange} helptext={helpText.fields.yBranch.branchLen} /></Grid>
+                            <Grid size={12}><HelpField id="branchNumSeg" label="Segments (#)" value={yBranchValues.branchNumSeg} onChange={handleYBranchChange} type="number" helptext={helpText.fields.yBranch.branchNumSeg} InputProps={{ inputProps: { min: 1, step: 1 } }} /></Grid>
                         </Grid>
                     </Box>
                 )}

@@ -116,7 +116,7 @@ const DetailRenderer = ({ item, detail }) => {
                     <img
                         src={d.image_url}
                         alt={item.name}
-                        style={{ maxWidth: '100%', border: '1px solid #e0e0e0', borderRadius: 4 }}
+                        style={{ maxWidth: '100%', borderRadius: 4 }}
                     />
                 </Box>
             )}
@@ -159,8 +159,8 @@ const DetailRenderer = ({ item, detail }) => {
 const ProtoRow = React.memo(({ item, onSelect, onDetail, isDetailOpen, isTopTen }) => (
     <TableRow
         sx={{
-            bgcolor: isTopTen ? '#fffde7' : 'inherit',
-            '&:hover': { bgcolor: isTopTen ? '#fff9c4' : '#f5f5f5' },
+            bgcolor: isTopTen ? 'rgba(255,213,0,0.1)' : 'inherit',
+            '&:hover': { bgcolor: isTopTen ? 'rgba(255,213,0,0.15)' : 'action.hover' },
         }}
     >
         <TableCell sx={{ py: 0.5, pl: 1, pr: 0, width: 44 }}>
@@ -197,9 +197,9 @@ const SectionHeaderRow = ({ label, count }) => (
     <TableRow>
         <TableCell
             colSpan={5}
-            sx={{ py: 0.5, bgcolor: '#f5f5f5', borderBottom: 'none', userSelect: 'none' }}
+            sx={{ py: 0.5, bgcolor: 'action.selected', borderBottom: 'none', userSelect: 'none' }}
         >
-            <Typography variant="caption" sx={{ fontWeight: 'bold', color: '#555' }}>
+            <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
                 {label}{count != null ? ` (${count})` : ''}
             </Typography>
         </TableCell>
@@ -222,6 +222,7 @@ const TopTenHeaderRow = () => (
 // --- Main dialog ---
 const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) => {
     const [digest, setDigest] = useState([]);
+    const [sessionItems, setSessionItems] = useState([]);
     const [loading, setLoading] = useState(false);
     const [staging, setStaging] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -237,6 +238,14 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
 
     const baseUrl = `http://${window.location.hostname}:5000`;
 
+    const refreshSessionItems = useCallback(() => {
+        if (!clientId || !type) return;
+        fetch(`${baseUrl}/session_file/${clientId}/user_registry.json`)
+            .then(r => r.ok ? r.json() : {})
+            .then(data => setSessionItems(data[type]?.items || []))
+            .catch(() => setSessionItems([]));
+    }, [clientId, type, baseUrl]);
+
     useEffect(() => {
         if (!open || !type) return;
         setLoading(true);
@@ -246,11 +255,13 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
         setSearchQuery('');
         setSelectedDb('Local');
         setStagingError(null);
+        setSessionItems([]);
         fetch(`${baseUrl}/proto_digest/${type}`)
             .then(r => r.json())
             .then(data => setDigest(data.items || []))
             .catch(err => console.error('Failed to load proto digest:', err))
             .finally(() => setLoading(false));
+        refreshSessionItems();
     }, [open, type]);
 
     useEffect(() => {
@@ -314,6 +325,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                     setStagingError(data.error || `Download failed (HTTP ${r.status})`);
                     return;
                 }
+                refreshSessionItems();
                 onSelect({ ...item, staged_filename: data.filename });
                 onClose();
             } catch (err) {
@@ -325,7 +337,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
             onSelect(item);
             onClose();
         }
-    }, [clientId, baseUrl, onSelect, onClose]);
+    }, [clientId, baseUrl, onSelect, onClose, refreshSessionItems]);
 
     const handleUpload = useCallback(async (e) => {
         const file = e.target.files[0];
@@ -363,11 +375,12 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
             displayItems:  searchResults.filter(i => !i.topTen),
             displayTopTen: searchResults.filter(i =>  i.topTen),
         };
+        if (selectedDb !== 'Local') return { displayItems: [], displayTopTen: [] };
         return {
-            displayItems:  digest.filter(d => !d.topTen),
+            displayItems:  [...sessionItems, ...digest.filter(d => !d.topTen)],
             displayTopTen: digest.filter(d =>  d.topTen),
         };
-    }, [digest, searchResults]);
+    }, [digest, searchResults, sessionItems, selectedDb]);
     return (
         <Dialog
             open={open}
@@ -392,7 +405,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                     onChange={handleUpload}
                 />
                 {/* Search bar */}
-                <Box sx={{ display: 'flex', gap: 1, p: 1.5, alignItems: 'center', borderBottom: '1px solid #e0e0e0', flexShrink: 0 }}>
+                <Box sx={{ display: 'flex', gap: 1, p: 1.5, alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
                     <FormControl size="small" sx={{ minWidth: 130 }}>
                         <InputLabel>Database</InputLabel>
                         <Select value={selectedDb} label="Database" onChange={e => setSelectedDb(e.target.value)}>
@@ -419,17 +432,17 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
                                 sx={{ flex: 1 }}
                             />
-                            <Button variant="contained" size="small" startIcon={<SearchIcon />} onClick={handleSearch}>
+                            <Button variant="contained" size="medium" startIcon={<SearchIcon />} onClick={handleSearch}>
                                 Search
                             </Button>
                             {searchResults !== null && (
-                                <Button size="small" onClick={() => { setSearchResults(null); setSearchQuery(''); }}>
+                                <Button size="medium" onClick={() => { setSearchResults(null); setSearchQuery(''); }}>
                                     Clear
                                 </Button>
                             )}
                             <Button
                                 variant="outlined"
-                                size="small"
+                                size="medium"
                                 startIcon={uploading ? <CircularProgress size={14} /> : <UploadFileIcon />}
                                 onClick={() => uploadInputRef.current?.click()}
                                 disabled={uploading || !clientId}
@@ -446,7 +459,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                     <Box sx={{ flex: detailItem ? '0 0 58%' : '1 1 100%', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'flex-basis 0.15s' }}>
                     <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                         {stagingError && (
-                            <Box sx={{ m: 2, p: 1.5, bgcolor: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 1 }}>
+                            <Box sx={{ m: 2, p: 1.5, bgcolor: 'error.dark', border: '1px solid', borderColor: 'error.main', borderRadius: 1 }}>
                                 <Typography variant="body2" color="error" sx={{ fontWeight: 600 }}>
                                     Download failed
                                 </Typography>
@@ -456,18 +469,18 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                         {(loading || staging || uploading) ? (
                             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 6 }}>
                                 <CircularProgress />
-                                {staging && <Typography sx={{ ml: 2 }}>Loading file…</Typography>}
+                                {staging && <Typography sx={{ ml: 2 }}>Downloading file…</Typography>}
                                 {uploading && <Typography sx={{ ml: 2 }}>Uploading…</Typography>}
                             </Box>
                         ) : (
                             <Table size="small" stickyHeader>
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell sx={{ width: 44, bgcolor: '#fafafa' }} />
-                                        <TableCell sx={{ fontWeight: 'bold', bgcolor: '#fafafa' }}>Name</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold', bgcolor: '#fafafa' }}>Source</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold', bgcolor: '#fafafa' }}>Description</TableCell>
-                                        <TableCell sx={{ width: 44, bgcolor: '#fafafa' }} />
+                                        <TableCell sx={{ width: 44, bgcolor: 'background.paper' }} />
+                                        <TableCell sx={{ fontWeight: 'bold', bgcolor: 'background.paper' }}>Name</TableCell>
+                                        <TableCell sx={{ fontWeight: 'bold', bgcolor: 'background.paper' }}>Source</TableCell>
+                                        <TableCell sx={{ fontWeight: 'bold', bgcolor: 'background.paper' }}>Description</TableCell>
+                                        <TableCell sx={{ width: 44, bgcolor: 'background.paper' }} />
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -521,7 +534,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
 
                     {/* Detail panel */}
                     {detailItem && (
-                        <Box sx={{ flex: 1, borderLeft: '1px solid #e0e0e0', overflow: 'auto', minHeight: 0, p: 2 }}>
+                        <Box sx={{ flex: 1, borderLeft: 1, borderColor: 'divider', overflow: 'auto', minHeight: 0, p: 2 }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
                                 <Typography variant="h6" sx={{ wordBreak: 'break-word', lineHeight: 1.3, flex: 1, minWidth: 0 }}>
                                     {detailItem.name}

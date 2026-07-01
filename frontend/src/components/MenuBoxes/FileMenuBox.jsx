@@ -1,11 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-    Box, Typography, Button, Grid, TextField, MenuItem, Divider,
+    Box, Typography, Button, Grid2 as Grid, TextField, MenuItem, Divider,
     Dialog, DialogTitle, DialogContent, DialogActions, IconButton
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import AddIcon from '@mui/icons-material/Add';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import SaveIcon from '@mui/icons-material/Save';
+import SaveAltIcon from '@mui/icons-material/SaveAlt';
+import HistoryIcon from '@mui/icons-material/History';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import InfoIcon from '@mui/icons-material/Info';
+import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 
 // Importing logos
 import jardesLogo from '../../assets/jardes_logo.png';
@@ -265,19 +273,15 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
 
     // --- Sub-components ---
 
-    const MenuButton = ({ label, onClick, sx, ...props }) => (
-        <Grid item xs={12}>
+    const MenuButton = ({ label, onClick, icon, color, sx, ...props }) => (
+        <Grid size={12}>
             <Button
-                variant="contained"
+                variant="outlined"
                 fullWidth
-                sx={{ 
-                    bgcolor: '#e0e0e0', 
-                    color: 'black', 
-                    justifyContent: 'flex-start',
-                    pl: 2,
-                    ':hover': { bgcolor: '#bdbdbd' },
-                    ...sx
-                }}
+                size="medium"
+                startIcon={icon}
+                color={color || 'inherit'}
+                sx={{ justifyContent: 'flex-start', color: color ? undefined : 'text.primary', ...sx }}
                 onClick={onClick}
                 {...props}
             >
@@ -319,53 +323,32 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                 </Box>
             </DialogContent>
             <DialogActions>
-                <Button onClick={onClose}>Close</Button>
+                <Button variant="text" onClick={onClose}>Close</Button>
             </DialogActions>
         </Dialog>
     );
 
     return (
-        <Box style={{ padding: '16px', background: '#f5f5f5', borderRadius: '8px', height: '100%', overflowY: 'auto' }}>
-            
+        <Box sx={{ p: 2, bgcolor: 'background.paper', height: '100%', overflowY: 'auto' }}>
+
             {/* === Section 1: Main Actions === */}
-            <Grid container spacing={1}>
-                <MenuButton label="New" onClick={handleNew} />
-
-                <Grid item xs={12}>
-                    <Button
-                        variant="contained"
-                        fullWidth
-                        sx={{ bgcolor: '#e0e0e0', color: 'black', justifyContent: 'flex-start', pl: 2, ':hover': { bgcolor: '#bdbdbd' } }}
-                        onClick={() => loadInputRef.current?.click()}
-                    >
-                        Load Model
-                    </Button>
-                    <input type="file" accept=".json,.jardes" style={{ display: 'none' }} ref={loadInputRef} onChange={handleLoadFile} />
-                </Grid>
-
-                <MenuButton label="Save Model" onClick={handleDownloadProject} />
-                <MenuButton label="Save Model JSON" onClick={handleSaveModel} />
-                <MenuButton label="Save Model History" onClick={handleDownloadProjectHistory} />
-
-                <Grid item xs={12}>
-                    <Button
-                        variant="contained"
-                        fullWidth
-                        sx={{ bgcolor: '#e0e0e0', color: 'black', justifyContent: 'flex-start', pl: 2, ':hover': { bgcolor: '#bdbdbd' } }}
-                        onClick={() => docInputRef.current?.click()}
-                    >
-                        Upload Model Documentation (.html)
-                    </Button>
-                    <input type="file" accept=".html" style={{ display: 'none' }} ref={docInputRef} onChange={handleDocFileUpload} />
-                </Grid>
+            <Grid container spacing={0.75}>
+                <MenuButton label="New" icon={<AddIcon fontSize="small" />} onClick={handleNew} />
+                <MenuButton label="Load Model" icon={<FolderOpenIcon fontSize="small" />} onClick={() => loadInputRef.current?.click()} />
+                <input type="file" accept=".json,.jardes" style={{ display: 'none' }} ref={loadInputRef} onChange={handleLoadFile} />
+                <MenuButton label="Save Model" icon={<SaveIcon fontSize="small" />} onClick={handleDownloadProject} />
+                <MenuButton label="Save Model JSON" icon={<SaveAltIcon fontSize="small" />} onClick={handleSaveModel} />
+                <MenuButton label="Save Model History" icon={<HistoryIcon fontSize="small" />} onClick={handleDownloadProjectHistory} />
+                <MenuButton label="Upload Model Documentation (.html)" icon={<UploadFileIcon fontSize="small" />} onClick={() => docInputRef.current?.click()} />
+                <input type="file" accept=".html" style={{ display: 'none' }} ref={docInputRef} onChange={handleDocFileUpload} />
             </Grid>
 
-            <Divider sx={{ my: 2, borderBottomWidth: 2 }} />
+            <Divider sx={{ my: 1.5 }} />
 
             {/* === Section 2: Properties === */}
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>Properties</Typography>
             <Grid container spacing={1.5}>
-                <Grid item xs={12}>
+                <Grid size={12}>
                     <TextField
                         fullWidth
                         size="small"
@@ -374,7 +357,7 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                         onChange={(e) => setModelFileName(e.target.value)}
                     />
                 </Grid>
-                <Grid item xs={12}>
+                <Grid size={12}>
                     <TextField
                         fullWidth
                         size="small"
@@ -383,7 +366,7 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                         onChange={(e) => setCreator(e.target.value)}
                     />
                 </Grid>
-                <Grid item xs={12}>
+                <Grid size={12}>
                      <TextField
                         select
                         fullWidth
@@ -398,7 +381,7 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                          <MenuItem value="None">None</MenuItem>
                      </TextField>
                  </Grid>
-                 <Grid item xs={12}>
+                 <Grid size={12}>
                     <TextField
                         fullWidth
                         size="small"
@@ -409,7 +392,7 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                         onChange={(e) => setModelNotes(e.target.value)}
                     />
                  </Grid>
-                 <Grid item xs={12}>
+                 <Grid size={12}>
                     <TextField
                         fullWidth
                         size="small"
@@ -423,21 +406,13 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                  </Grid>
             </Grid>
 
-            <Divider sx={{ my: 2, borderBottomWidth: 2 }} />
+            <Divider sx={{ my: 1.5 }} />
 
             {/* === Section 3: App Actions === */}
-            <Grid container spacing={1}>
-                <MenuButton label="Print" onClick={() => {}} /> 
-                <MenuButton label="About Jardesigner" onClick={() => setShowAboutJardesigner(true)} />
-                <MenuButton label="About MOOSE" onClick={() => setShowAboutMoose(true)} />
-                <MenuButton 
-                    label="Quit" 
-                    onClick={handleQuit} 
-                    sx={{ 
-                        color: '#c62828', 
-                        fontWeight: 'bold'
-                    }}
-                />
+            <Grid container spacing={0.75}>
+                <MenuButton label="About Jardesigner" icon={<InfoIcon fontSize="small" />} onClick={() => setShowAboutJardesigner(true)} />
+                <MenuButton label="About MOOSE" icon={<InfoIcon fontSize="small" />} onClick={() => setShowAboutMoose(true)} />
+                <MenuButton label="Quit" icon={<ExitToAppIcon fontSize="small" />} onClick={handleQuit} color="error" />
             </Grid>
 
             {/* === Dialogs === */}
@@ -497,31 +472,7 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
                     ))}
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setShowMissingFilesDialog(false)}>OK</Button>
-                </DialogActions>
-            </Dialog>
-
-
-            <Dialog open={showMissingFilesDialog} onClose={() => setShowMissingFilesDialog(false)} maxWidth="sm" fullWidth>
-                <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    External files required
-                    <IconButton size="small" onClick={() => setShowMissingFilesDialog(false)}><CloseIcon /></IconButton>
-                </DialogTitle>
-                <DialogContent>
-                    <Typography variant="body2" sx={{ mb: 2 }}>
-                        This model references files that are not embedded in the JSON.
-                        Load them from their respective panels:
-                    </Typography>
-                    {missingFiles.map(({ file, where }, i) => (
-                        <Box key={i} sx={{ mb: 1 }}>
-                            <Typography variant="body2">
-                                {file} --- {where}.
-                            </Typography>
-                        </Box>
-                    ))}
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setShowMissingFilesDialog(false)}>OK</Button>
+                    <Button variant="text" onClick={() => setShowMissingFilesDialog(false)}>OK</Button>
                 </DialogActions>
             </Dialog>
 

@@ -416,23 +416,31 @@ export const AppLayout = (props) => {
                 {simError?.message}
             </DialogContentText>
             {simError?.details && (
-                <pre style={{ 
-                    whiteSpace: 'pre-wrap', 
-                    wordBreak: 'break-word', 
-                    backgroundColor: '#f5f5f5', 
-                    padding: '10px',
-                    fontSize: '0.85rem',
-                    maxHeight: '300px',
-                    overflow: 'auto'
-                }}>
+                <Box
+                    component="pre"
+                    sx={{
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        bgcolor: 'action.hover',
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 1,
+                        p: 1.5,
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                        maxHeight: 280,
+                        overflow: 'auto',
+                        m: 0,
+                    }}
+                >
                     {simError.details}
-                </pre>
+                </Box>
             )}
 
             {/* Analysis Sections */}
             {errorAnalysis.mean && (
                 <Box sx={{ mt: 3, mb: 1 }}>
-                    <Typography variant="h6" color="primary" sx={{ fontSize: '1rem', fontWeight: 'bold' }}>
+                    <Typography variant="h6" color="primary" sx={{ fontWeight: 700 }}>
                         What does it mean?
                     </Typography>
                     <Typography variant="body1">
@@ -443,7 +451,7 @@ export const AppLayout = (props) => {
 
             {errorAnalysis.do && (
                 <Box sx={{ mt: 2 }}>
-                    <Typography variant="h6" color="primary" sx={{ fontSize: '1rem', fontWeight: 'bold' }}>
+                    <Typography variant="h6" color="primary" sx={{ fontWeight: 700 }}>
                         What should I do?
                     </Typography>
                     <Typography variant="body1">

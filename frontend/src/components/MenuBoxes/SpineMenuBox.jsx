@@ -5,7 +5,7 @@ import {
     Tab,
     Typography,
     TextField,
-    Grid,
+    Grid2 as Grid,
     MenuItem,
     Button,
     Tooltip,
@@ -291,7 +291,7 @@ const SpineMenuBox = ({ onConfigurationChange, currentConfig, elecPaths = [] }) 
     }, []);
 
     return (
-        <Box sx={{ p: 2, background: '#f5f5f5', borderRadius: 2 }}>
+        <Box sx={{ p: 2, bgcolor: 'background.paper' }}>
             <Typography variant="h6" gutterBottom>Spine Definitions</Typography>
 
             {/* === Prototypes Section === */}
@@ -302,53 +302,53 @@ const SpineMenuBox = ({ onConfigurationChange, currentConfig, elecPaths = [] }) 
                 </Tooltip>
             </Box>
             <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                <Tabs value={activePrototype} onChange={(e, nv) => setActivePrototype(nv)} sx={{ '& .MuiTabs-scroller': { overflow: 'visible !important' }, '& .MuiTabs-flexContainer': { flexWrap: 'wrap' } }} aria-label="Spine Prototypes">
+                <Tabs value={activePrototype} onChange={(e, nv) => setActivePrototype(nv)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile aria-label="Spine Prototypes">
                     {prototypes.map((p, i) => <Tab key={i} label={p.name || `Proto ${i + 1}`} />)}
-                    <Button onClick={addPrototype} startIcon={<AddIcon />} sx={{ minWidth: 'auto', p: '6px 8px', ml: '10px', alignSelf: 'center' }}>Add Proto</Button>
+                    <Button variant="text" onClick={addPrototype} startIcon={<AddIcon />} sx={{ minWidth: 'auto', p: '6px 8px', ml: '10px', alignSelf: 'center' }}>Add Proto</Button>
                 </Tabs>
             </Box>
             {prototypes[activePrototype] && (
-                <Box sx={{ mt: 2, p: 2, border: '1px solid #e0e0e0', borderRadius: '4px' }}>
+                <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
                     <Grid container spacing={2}>
-                         <Grid item xs={6}>
+                         <Grid size={6}>
                             <HelpField id="type" label="Type" value={prototypes[activePrototype].type} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.type} select>
                                 {['Excitatory With Ca', 'Excitatory', 'Passive', 'User Function'].map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
                             </HelpField>
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid size={6}>
                             <HelpField id="name" label="Prototype Name" value={prototypes[activePrototype].name} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.name} />
                         </Grid>
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                              <HelpField id="source" label="Source (auto)" value={prototypes[activePrototype].source} onChange={() => {}} helptext={helpText.prototypes.source} InputProps={{ readOnly: true }} variant="filled" />
                         </Grid>
-                         <Grid item xs={6}>
+                         <Grid size={6}>
                             <HelpField id="shaftDiameter" label="Shaft Diameter (μm)" type="number" value={prototypes[activePrototype].shaftDiameter} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.shaftDiameter} />
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid size={6}>
                              <HelpField id="shaftLength" label="Shaft Length (μm)" type="number" value={prototypes[activePrototype].shaftLength} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.shaftLength} />
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid size={6}>
                              <HelpField id="headDiameter" label="Head Diameter (μm)" type="number" value={prototypes[activePrototype].headDiameter} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.headDiameter} />
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid size={6}>
                              <HelpField id="headLength" label="Head Length (μm)" type="number" value={prototypes[activePrototype].headLength} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.headLength} />
                         </Grid>
                         
                         {(prototypes[activePrototype].source === 'makeActiveSpine()' || prototypes[activePrototype].source === 'makeExcSpine()') && (
                             <>
-                                <Grid item xs={12}><Typography variant="caption" display="block">Receptor Params</Typography></Grid>
-                                <Grid item xs={6}><HelpField id="amparGbar" label="AMPAR Gbar (S/m^2)" type="number" value={prototypes[activePrototype].amparGbar} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.amparGbar} /></Grid>
-                                <Grid item xs={6}><HelpField id="nmdarGbar" label="NMDAR Gbar (S/m^2)" type="number" value={prototypes[activePrototype].nmdarGbar} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.nmdarGbar} /></Grid>
+                                <Grid size={12}><Typography variant="caption" display="block">Receptor Params</Typography></Grid>
+                                <Grid size={6}><HelpField id="amparGbar" label="AMPAR Gbar (S/m^2)" type="number" value={prototypes[activePrototype].amparGbar} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.amparGbar} /></Grid>
+                                <Grid size={6}><HelpField id="nmdarGbar" label="NMDAR Gbar (S/m^2)" type="number" value={prototypes[activePrototype].nmdarGbar} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.nmdarGbar} /></Grid>
                                 
                                 {(prototypes[activePrototype].source === 'makeActiveSpine()') && (
-                                    <Grid item xs={6}>
+                                    <Grid size={6}>
                                         <HelpField id="CaTau" label="Ca decay time (s)" type="number" value={prototypes[activePrototype].CaTau} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.CaTau} />
                                     </Grid>
                                 )}
                              </>
                         )}
                     </Grid>
-                    <Button variant="outlined" color="secondary" startIcon={<DeleteIcon />} onClick={() => removePrototype(activePrototype)} sx={{ mt: 2 }}>
+                    <Button variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => removePrototype(activePrototype)} sx={{ mt: 2 }}>
                         Remove '{prototypes[activePrototype].name}'
                     </Button>
                 </Box>
@@ -362,16 +362,16 @@ const SpineMenuBox = ({ onConfigurationChange, currentConfig, elecPaths = [] }) 
                 </Tooltip>
             </Box>
              <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                <Tabs value={activeDistribution} onChange={(e, nv) => setActiveDistribution(nv)} sx={{ '& .MuiTabs-scroller': { overflow: 'visible !important' }, '& .MuiTabs-flexContainer': { flexWrap: 'wrap' } }} aria-label="Spine Distributions">
+                <Tabs value={activeDistribution} onChange={(e, nv) => setActiveDistribution(nv)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile aria-label="Spine Distributions">
                     {distributions.map((d, i) => <Tab key={i} label={`${d.prototype || 'New'} @ ${d.path || '?'}`} />)}
-                    <Button onClick={addDistribution} startIcon={<AddIcon />} sx={{ minWidth: 'auto', p: '6px 8px', ml: '10px', alignSelf: 'center' }}>Add Dist</Button>
+                    <Button variant="text" onClick={addDistribution} startIcon={<AddIcon />} sx={{ minWidth: 'auto', p: '6px 8px', ml: '10px', alignSelf: 'center' }}>Add Dist</Button>
                 </Tabs>
             </Box>
              {distributions[activeDistribution] && (
-                <Box sx={{ mt: 2, p: 2, border: '1px solid #e0e0e0', borderRadius: '4px' }}>
+                <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
                      <Grid container spacing={2}>
                         {/* 1. Moved Path to first position, renamed, full width, and made into a Menu */}
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                              <HelpField 
                                 id="path" 
                                 label="Parent Elec Compartment" 
@@ -386,36 +386,36 @@ const SpineMenuBox = ({ onConfigurationChange, currentConfig, elecPaths = [] }) 
                              </HelpField>
                         </Grid>
 
-                        <Grid item xs={6}>
+                        <Grid size={6}>
                              <HelpField id="prototype" label="Prototype" select value={distributions[activeDistribution].prototype} onChange={(id,v) => updateDistribution(activeDistribution, id, v)} helptext={helpText.distributions.prototype}>
                                 <MenuItem value=""><em>Select...</em></MenuItem>
                                 {prototypes.filter(p => p.name).map((p) => <MenuItem key={p.name} value={p.name}>{p.name}</MenuItem>)}
                             </HelpField>
                         </Grid>
                         {/* 'path' was here previously */}
-                        <Grid item xs={6}>
+                        <Grid size={6}>
                              <HelpField id="spacing" label="Spacing (μm)" type="number" value={distributions[activeDistribution].spacing} onChange={(id,v) => updateDistribution(activeDistribution, id, v)} helptext={helpText.distributions.spacing}/>
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid size={6}>
                              <HelpField id="minSpacing" label="Min Spacing (μm)" type="number" value={distributions[activeDistribution].minSpacing} onChange={(id,v) => updateDistribution(activeDistribution, id, v)} helptext={helpText.distributions.minSpacing}/>
                         </Grid>
-                         <Grid item xs={6}>
+                         <Grid size={6}>
                             <HelpField id="sizeScale" label="Size Scale" type="number" value={distributions[activeDistribution].sizeScale} onChange={(id,v) => updateDistribution(activeDistribution, id, v)} helptext={helpText.distributions.sizeScale}/>
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid size={6}>
                             <HelpField id="sizeStdDev" label="Size Std Dev" type="number" value={distributions[activeDistribution].sizeStdDev} onChange={(id,v) => updateDistribution(activeDistribution, id, v)} helptext={helpText.distributions.sizeStdDev}/>
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid size={6}>
                              <HelpField id="angle" label="Angle (rad)" type="number" value={distributions[activeDistribution].angle} onChange={(id,v) => updateDistribution(activeDistribution, id, v)} helptext={helpText.distributions.angle}/>
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid size={6}>
                              <HelpField id="angleStdDev" label="Angle Std Dev (rad)" type="number" value={distributions[activeDistribution].angleStdDev} onChange={(id,v) => updateDistribution(activeDistribution, id, v)} helptext={helpText.distributions.angleStdDev}/>
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid size={6}>
                              <HelpField id="randSeed" label="Random seed" type="number" value={distributions[activeDistribution].randSeed} onChange={(id,v) => updateDistribution(activeDistribution, id, v)} helptext={helpText.distributions.randSeed}/>
                         </Grid>
                     </Grid>
-                    <Button variant="outlined" color="secondary" startIcon={<DeleteIcon />} onClick={() => removeDistribution(activeDistribution)} sx={{ mt: 2 }}>
+                    <Button variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => removeDistribution(activeDistribution)} sx={{ mt: 2 }}>
                         Remove Distribution
                     </Button>
                 </Box>
@@ -438,8 +438,8 @@ const SpineMenuBox = ({ onConfigurationChange, currentConfig, elecPaths = [] }) 
                     />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setCustomPathDialogOpen(false)}>Cancel</Button>
-                    <Button onClick={handleSaveCustomPath}>Set Path</Button>
+                    <Button variant="text" onClick={() => setCustomPathDialogOpen(false)}>Cancel</Button>
+                    <Button variant="contained" onClick={handleSaveCustomPath}>Set Path</Button>
                 </DialogActions>
             </Dialog>
         </Box>
