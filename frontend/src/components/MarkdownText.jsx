@@ -1,10 +1,26 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Box, Typography, CircularProgress, Tabs, Tab, List, ListItem,
          ListItemText, ListItemSecondaryAction, Button, Chip, Stack, Alert } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 
 const API_BASE_URL = `http://${window.location.hostname}:5000`;
+
+// Guide.html and uploaded model-docs are independent documents rendered in an
+// iframe — they don't inherit our app's theme/CSS. In dark mode we inject an
+// override stylesheet so they don't render as a blinding white rectangle
+// with black text inside an otherwise dark UI.
+const DARK_IFRAME_RULES = `
+  html, body { background: #161B22 !important; color: #e6e6e6 !important; }
+  a { color: #8ab4f8 !important; }
+  table, th, td { border-color: #3a3f4b !important; }
+  span.annotation_style_by_filter { background-color: #4a3f00 !important; }
+`;
+
+const DARK_IFRAME_CSS = `<style>${DARK_IFRAME_RULES}</style>`;
+
+const withIframeTheme = (html, isDark) => (isDark ? DARK_IFRAME_CSS + html : html);
 
 const generateSlug = (text) =>
     String(text).toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
@@ -53,9 +69,35 @@ function MarkdownRenderer({ markdown, scrollRef }) {
 }
 
 function GuideTab() {
+    // Guide.html is loaded via a plain src= (not fetch+srcDoc) so in-page
+    // anchor navigation works; we theme it post-load by injecting a <style>
+    // into its contentDocument instead (same-origin, unsandboxed iframe).
+    const iframeRef = useRef(null);
+    const theme = useTheme();
+    const isDark = theme.palette.mode === 'dark';
+
+    const applyIframeTheme = useCallback(() => {
+        const doc = iframeRef.current?.contentDocument;
+        if (!doc) return;
+        let styleEl = doc.getElementById('dark-mode-override');
+        if (isDark) {
+            if (!styleEl) {
+                styleEl = doc.createElement('style');
+                styleEl.id = 'dark-mode-override';
+                doc.head?.appendChild(styleEl);
+            }
+            styleEl.textContent = DARK_IFRAME_RULES;
+        } else if (styleEl) {
+            styleEl.remove();
+        }
+    }, [isDark]);
+
+    useEffect(() => { applyIframeTheme(); }, [applyIframeTheme]);
+
     return (
         <Box sx={{ height: '100%' }}>
-            <iframe src="Guide.html" style={{ width: '100%', height: '100%', border: 'none' }}
+            <iframe ref={iframeRef} src="Guide.html" onLoad={applyIframeTheme}
+                    style={{ width: '100%', height: '100%', border: 'none' }}
                     title="Jardesigner Guide" />
         </Box>
     );
@@ -128,6 +170,8 @@ function TutorialsTab({ clientId, onLoadTutorial }) {
 function ModelNotesTab({ clientId, docFile }) {
     const [htmlContent, setHtmlContent] = useState('');
     const [loading, setLoading] = useState(false);
+    const theme = useTheme();
+    const isDark = theme.palette.mode === 'dark';
 
     useEffect(() => {
         if (!docFile || !clientId) { setHtmlContent(''); return; }
@@ -137,6 +181,8 @@ function ModelNotesTab({ clientId, docFile }) {
             .then(text => { setHtmlContent(text); setLoading(false); })
             .catch(() => { setHtmlContent(''); setLoading(false); });
     }, [clientId, docFile]);
+
+    const srcDoc = useMemo(() => withIframeTheme(htmlContent, isDark), [htmlContent, isDark]);
 
     if (!docFile) {
         return (
@@ -156,7 +202,7 @@ function ModelNotesTab({ clientId, docFile }) {
     return (
         <Box sx={{ height: '100%' }}>
             <iframe
-                srcDoc={htmlContent}
+                srcDoc={srcDoc}
                 style={{ width: '100%', height: '100%', border: 'none' }}
                 title="Model Documentation"
                 sandbox="allow-same-origin"

@@ -1,14 +1,10 @@
 // src/components/JsonText.jsx
 
-import React, { useCallback } from 'react';
+import React, { useState } from 'react';
 import { Box, TextField, Button } from '@mui/material';
 
-const JsonText = ({ jsonString, setActiveMenu }) => {
-  const handleRefreshClick = useCallback(() => {
-    if (setActiveMenu) {
-        setActiveMenu(null);
-    }
-  }, [setActiveMenu]);
+const JsonText = ({ jsonString }) => {
+  const [refreshKey, setRefreshKey] = useState(0);
 
   return (
     <Box sx={{
@@ -20,13 +16,15 @@ const JsonText = ({ jsonString, setActiveMenu }) => {
     }}>
       <Button
         variant="contained"
-        onClick={handleRefreshClick}
+        fullWidth
+        onClick={() => setRefreshKey(k => k + 1)}
         sx={{ mb: 2, flexShrink: 0 }}
       >
         Show Model JSON
       </Button>
 
       <TextField
+        key={refreshKey}
         fullWidth
         multiline
         // MODIFIED: Value is now only the original jsonString

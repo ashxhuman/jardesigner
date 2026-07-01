@@ -308,7 +308,7 @@ const SpineMenuBox = ({ onConfigurationChange, currentConfig, elecPaths = [] }) 
                 </Tabs>
             </Box>
             {prototypes[activePrototype] && (
-                <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
+                <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                     <Grid container spacing={2}>
                          <Grid size={6}>
                             <HelpField id="type" label="Type" value={prototypes[activePrototype].type} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.type} select>
@@ -368,7 +368,7 @@ const SpineMenuBox = ({ onConfigurationChange, currentConfig, elecPaths = [] }) 
                 </Tabs>
             </Box>
              {distributions[activeDistribution] && (
-                <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
+                <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                      <Grid container spacing={2}>
                         {/* 1. Moved Path to first position, renamed, full width, and made into a Menu */}
                         <Grid size={12}>

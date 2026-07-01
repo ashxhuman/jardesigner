@@ -366,7 +366,7 @@ const AdaptorsMenuBox = ({
              </Box>
 
              {activeAdaptorData && (
-                 <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
+                 <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                     
                     {/* 2. Stacked Layout with Vertical Flip Logic */}
                     <Grid container spacing={2}>
@@ -376,7 +376,7 @@ const AdaptorsMenuBox = ({
                             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1, color: 'primary.main', textAlign: 'left' }}>
                                 Source: {activeAdaptorData.direction === 'chemToElec' ? 'Chemical' : 'Electrical'}
                             </Typography>
-                            <Box sx={{ p: 2, border: '1px dashed rgba(67,71,78,0.8)', borderRadius: 2 }}>
+                            <Box sx={{ p: 2, border: '1px dashed', borderColor: 'divider', borderRadius: 2 }}>
                                 {activeAdaptorData.direction === 'chemToElec' 
                                     ? renderChemicalSection() 
                                     : renderElectricalSection()
@@ -402,7 +402,7 @@ const AdaptorsMenuBox = ({
                             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1, color: 'secondary.main', textAlign: 'left' }}>
                                 Destination: {activeAdaptorData.direction === 'chemToElec' ? 'Electrical' : 'Chemical'}
                             </Typography>
-                            <Box sx={{ p: 2, border: '1px dashed rgba(67,71,78,0.8)', borderRadius: 2 }}>
+                            <Box sx={{ p: 2, border: '1px dashed', borderColor: 'divider', borderRadius: 2 }}>
                                 {activeAdaptorData.direction === 'chemToElec' 
                                     ? renderElectricalSection() 
                                     : renderChemicalSection()

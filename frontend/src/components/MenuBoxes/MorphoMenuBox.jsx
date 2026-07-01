@@ -193,7 +193,7 @@ const MorphoMenuBox = ({ onConfigurationChange, currentConfig, onFileChange, cli
     const handleAllenClose = () => setAllenOpen(false);
 
     return (
-        <Box sx={{ p: 2, background: '#f5f5f5', borderRadius: 2 }}>
+        <Box sx={{ p: 2, bgcolor: 'background.paper' }}>
             <ProtoPickerDialog
                 open={pickerOpen}
                 onClose={() => setPickerOpen(false)}

@@ -353,7 +353,7 @@ const ChanMenuBox = ({
                 </Tabs>
             </Box>
             {prototypes[activePrototype] && (
-                <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
+                <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                     <Grid container spacing={2} alignItems="center">
                         <Grid size={12}>
                             <HelpField id="name" label="Prototype Name" value={prototypes[activePrototype].name} onChange={(id,v) => setCustomPrototypeName(activePrototype, v)} helptext={helpText.prototypes.name} required />
@@ -419,7 +419,7 @@ const ChanMenuBox = ({
                  </Tabs>
             </Box>
             {distributions[activeDistribution] && (
-                 <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
+                 <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                      <Grid container spacing={2}>
                         {/* 1. Moved Path to first position, full width, and made into a Menu */}
                         <Grid size={12}>

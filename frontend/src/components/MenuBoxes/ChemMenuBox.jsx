@@ -502,7 +502,7 @@ const ChemMenuBox = ({
                 </Tabs>
             </Box>
             {activeProtoData && (
-                <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
+                <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                     <Grid container spacing={2} alignItems="center">
                         <Grid size={12}>
                             <HelpField id="name" label="Prototype Name" value={activeProtoData.name} onChange={(id,v) => setCustomPrototypeName(activePrototype, v)} helptext={helpText.prototypes.name} required/>
@@ -559,7 +559,7 @@ const ChemMenuBox = ({
                  </Tabs>
              </Box>
             {activeDistribData && (
-                <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
+                <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                      <Grid container spacing={2}>
                          {/* Row 1: Parent Elec Compartment (Full Width, Menu) */}
                          <Grid size={12}>

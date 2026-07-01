@@ -477,7 +477,7 @@ Aa: Auto-position`;
                     <Tooltip title="Playback Speed (Slower -> Faster)">
                         <Slider value={replayInterval} onChange={(e, newValue) => setReplayInterval(newValue)} aria-labelledby="replay-speed-slider" valueLabelDisplay="off" min={5} max={500} step={5} inverted />
                     </Tooltip>
-                    <Box sx={{ minWidth: '55px', textAlign: 'center', border: '1px solid #ccc', borderRadius: '4px', p: '4px' }}>
+                    <Box sx={{ minWidth: '55px', textAlign: 'center', border: '1px solid', borderColor: 'divider', borderRadius: '4px', p: '4px' }}>
                         <Typography variant="caption">{replayInterval}ms</Typography>
                     </Box>
                 </Box>

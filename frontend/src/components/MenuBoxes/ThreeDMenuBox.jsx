@@ -366,7 +366,7 @@ const ThreeDMenuBox = ({
                 </Tabs>
             </Box>
             {activeTabData && (
-                <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
+                <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                     <Grid container spacing={2}>
                         {/* 1. Parent Elec Compartment: First entry, Full Width */}
                         <Grid size={12}>
@@ -471,7 +471,7 @@ const ThreeDMenuBox = ({
                 <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold', mb: 0 }}>Global Display Settings</Typography>
                 <Tooltip title={helpText.headings.globalSettings} placement="right"><IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton></Tooltip>
             </Box>
-            <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
+            <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                 <Grid container spacing={2}>
                     <Grid size={{ xs: 12, sm: 6 }}><HelpField id="rotation" label="Rotation (rad/step)" type="number" value={globalSettings.rotation} onChange={(id, v) => updateGlobalSetting(id, v)} helptext={helpText.globalSettings.rotation} /></Grid>
                     <Grid size={{ xs: 12, sm: 6 }}><HelpField id="azimuth" label="Azimuth (azim)" type="number" value={globalSettings.azimuth} onChange={(id, v) => updateGlobalSetting(id, v)} helptext={helpText.globalSettings.azimuth} /></Grid>

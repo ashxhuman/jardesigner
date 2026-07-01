@@ -367,7 +367,7 @@ const StimMenuBox = ({
                   </Tabs>
               </Box>
               {activeStimData && (
-                  <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
+                  <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                       <Grid container spacing={2}>
                           
                           {/* 1. Parent Elec Compartment - First Row, Full Width */}

@@ -177,7 +177,7 @@ const SimOutputMenuBox = ({ onConfigurationChange, currentConfig = [], getChemPr
                  </Tabs>
              </Box>
              {activeFileData && (
-                 <Box sx={{ mt: 2, p: 2, border: '1px solid rgba(67,71,78,0.6)', borderRadius: '8px' }}>
+                 <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                      <Grid container spacing={2}>
                          <Grid size={{ xs: 12, sm: 7 }}><HelpField id="file" label="Output Filename" required value={activeFileData.file} onChange={(id, v) => updateOutputFile(activeOutputFileIndex, id, v)} helptext={helpText.fields.file} /></Grid>
                          <Grid size={{ xs: 12, sm: 5 }}><HelpField id="type" label="File Type" required select value={activeFileData.type} onChange={(id, v) => updateOutputFile(activeOutputFileIndex, id, v)} helptext={helpText.fields.type}>{outputTypeOptions.map(opt => <MenuItem key={opt} value={opt}>{opt}</MenuItem>)}</HelpField></Grid>
