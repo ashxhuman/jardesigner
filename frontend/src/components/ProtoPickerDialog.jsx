@@ -432,17 +432,17 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
                                 sx={{ flex: 1 }}
                             />
-                            <Button variant="contained" size="medium" startIcon={<SearchIcon />} onClick={handleSearch}>
+                            <Button variant="contained" size="small" startIcon={<SearchIcon />} onClick={handleSearch}>
                                 Search
                             </Button>
                             {searchResults !== null && (
-                                <Button size="medium" onClick={() => { setSearchResults(null); setSearchQuery(''); }}>
+                                <Button size="small" onClick={() => { setSearchResults(null); setSearchQuery(''); }}>
                                     Clear
                                 </Button>
                             )}
                             <Button
                                 variant="outlined"
-                                size="medium"
+                                size="small"
                                 startIcon={uploading ? <CircularProgress size={14} /> : <UploadFileIcon />}
                                 onClick={() => uploadInputRef.current?.click()}
                                 disabled={uploading || !clientId}
@@ -469,7 +469,7 @@ const ProtoPickerDialog = ({ open, onClose, onSelect, type, title, clientId }) =
                         {(loading || staging || uploading) ? (
                             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 6 }}>
                                 <CircularProgress />
-                                {staging && <Typography sx={{ ml: 2 }}>Downloading file…</Typography>}
+                                {staging && <Typography sx={{ ml: 2 }}>Loading file..</Typography>}
                                 {uploading && <Typography sx={{ ml: 2 }}>Uploading…</Typography>}
                             </Box>
                         ) : (

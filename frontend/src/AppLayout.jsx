@@ -318,7 +318,7 @@ export const AppLayout = (props) => {
                 key={key}
                 value={key}
                 label={label}
-                icon={<Box component="img" src={icon} alt="" sx={{ width: 48, height: 48, display: 'block' }} />}
+                icon={<Box component="img" src={icon} alt="" sx={{ width: 72, height: 72, display: 'block' }} />}
                 iconPosition="top"
                 onClick={() => activeMenu === key && toggleMenu(key)}
                 sx={{

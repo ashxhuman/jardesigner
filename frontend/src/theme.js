@@ -81,13 +81,13 @@ export const createAppTheme = (mode) => {
     components: {
       MuiCssBaseline: {
         styleOverrides: {
-          '*': { boxSizing: 'border-box' },
-          body: {
+          '*': {
+            boxSizing: 'border-box',
             scrollbarWidth: 'thin',
             scrollbarColor: `${scrollbar} transparent`,
-            '&::-webkit-scrollbar': { width: 6, height: 6 },
+            '&::-webkit-scrollbar': { width: 4, height: 4 },
             '&::-webkit-scrollbar-track': { background: 'transparent' },
-            '&::-webkit-scrollbar-thumb': { background: scrollbar, borderRadius: 3 },
+            '&::-webkit-scrollbar-thumb': { background: scrollbar, borderRadius: 2 },
           },
         },
       },

@@ -276,7 +276,7 @@ const FileMenuBox = ({ setJsonContent, currentConfig, getCurrentJsonData, client
     const MenuButton = ({ label, onClick, icon, color, sx, ...props }) => (
         <Grid size={12}>
             <Button
-                variant="outlined"
+                variant="contained"
                 fullWidth
                 size="medium"
                 startIcon={icon}
