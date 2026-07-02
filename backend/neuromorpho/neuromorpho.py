@@ -7,7 +7,9 @@
 import datetime
 import re
 import requests
+import gevent
 from dataclasses import dataclass, field
+from gevent.pool import Pool
 from typing import Any, Dict, List, Optional, Tuple
 
 _PRIMARY_URL = "http://cngpro.gmu.edu:8080/api"
@@ -85,52 +87,84 @@ def search_neurons(
     return resp.json()
 
 
+# Pages fetched concurrently per batch, and how many consecutive stale
+# batches (no new brain_region/cell_type/archive values) before we stop.
+# Measured against the live API: records aren't shuffled, so new archive
+# names keep appearing almost to the last page for large species (Rat has
+# 123 pages of 500 and still adds new archives at page 120) — the
+# early-stop rarely fires. The real win is concurrency: batch size 25
+# brings Rat from ~7min sequential to under a minute, tested error-free
+# up to 60 concurrent against the live API.
+_METADATA_BATCH_SIZE = 25
+_METADATA_STALL_BATCHES = 2
+
+
+def _fetch_metadata_page(species: str, page: int, retries: int = 1) -> Optional[Dict]:
+    for attempt in range(retries + 1):
+        try:
+            r = requests.post(
+                f"{BASE_URL}/neuron/select?page={page}&size=500",
+                json={"species": [species]},
+                headers=_HEADERS,
+                timeout=40,
+            )
+            if r.status_code == 404:
+                return None
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            if attempt < retries:
+                gevent.sleep(1)
+                continue
+            print(f"[neuromorpho] page {page} failed after {attempt + 1} attempt(s): {e}")
+            return None
+
+
 def fetch_neuron_metadata(species: str) -> Dict:
     """
     Collect all brain regions, cell types, and archives for a species.
 
-    This fetches every page sequentially — it's the slow call (~5-20s for
-    large species). Cache the result on disk; see neuromorpho_routes.py.
+    Fetches pages in concurrent batches (gevent) and stops once a couple of
+    consecutive batches add no new values, instead of walking every page
+    sequentially — the latter never finishes in practice for large species
+    like Rat. Cache the result on disk; see neuromorpho_routes.py.
     """
-    # Get total page count using the same page size as the loop below.
-    # Without size=500 the API returns totalPages based on ~20 items/page,
-    # but the loop fetches 500/page — so page counts differ and 404s appear.
-    first = requests.post(
-        f"{BASE_URL}/neuron/select?page=0&size=500",
-        json={"species": [species]},
-        headers=_HEADERS,
-        timeout=30,
-    )
-    first.raise_for_status()
-    first_data = first.json()
+    first_data = _fetch_metadata_page(species, 0)
+    if first_data is None:
+        return {"species": [species], "brain_region": [], "cell_type": [], "archive": []}
+
     total_pages = first_data.get("page", {}).get("totalPages", 1)
 
     brain_regions: set = set()
     cell_types: set = set()
     archives: set = set()
 
-    for page in range(total_pages):
-        try:
-            if page == 0:
-                data = first_data
-            else:
-                r = requests.post(
-                    f"{BASE_URL}/neuron/select?page={page}&size=500",
-                    json={"species": [species]},
-                    headers=_HEADERS,
-                    timeout=40,
-                )
-                if r.status_code == 404:
-                    break
-                r.raise_for_status()
-                data = r.json()
-            neurons = data.get("_embedded", {}).get("neuronResources", [])
-            for n in neurons:
-                _collect(brain_regions, n.get("brain_region"))
-                _collect(cell_types, n.get("cell_type"))
-                _collect(archives, n.get("archive"))
-        except Exception as e:
-            print(f"[neuromorpho] page {page} failed: {e}")
+    def _absorb(data: Dict) -> bool:
+        """Merge a page's values into the running sets; return True if any were new."""
+        before = len(brain_regions) + len(cell_types) + len(archives)
+        for n in data.get("_embedded", {}).get("neuronResources", []):
+            _collect(brain_regions, n.get("brain_region"))
+            _collect(cell_types, n.get("cell_type"))
+            _collect(archives, n.get("archive"))
+        after = len(brain_regions) + len(cell_types) + len(archives)
+        return after > before
+
+    _absorb(first_data)
+
+    stale_batches = 0
+    page = 1
+    while page < total_pages and stale_batches < _METADATA_STALL_BATCHES:
+        batch = range(page, min(page + _METADATA_BATCH_SIZE, total_pages))
+        pool = Pool(_METADATA_BATCH_SIZE)
+        results = pool.map(lambda p, _species=species: _fetch_metadata_page(_species, p), batch)
+
+        found_new = False
+        for data in results:
+            if data and _absorb(data):
+                found_new = True
+
+        stale_batches = 0 if found_new else stale_batches + 1
+        page += _METADATA_BATCH_SIZE
 
     return {
         "species": [species],
