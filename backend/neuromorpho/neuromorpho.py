@@ -122,7 +122,9 @@ def _fetch_metadata_page(species: str, page: int, retries: int = 1) -> Optional[
 
 def fetch_neuron_metadata(species: str) -> Dict:
     """
-    Collect all brain regions, cell types, and archives for a species.
+    Collect all brain regions, cell types, and archives for a species, plus
+    which cell types co-occur with each brain region (so the frontend can
+    narrow the cell type dropdown once a brain region is picked).
 
     Fetches pages in concurrent batches (gevent) and stops once a couple of
     consecutive batches add no new values, instead of walking every page
@@ -131,21 +133,27 @@ def fetch_neuron_metadata(species: str) -> Dict:
     """
     first_data = _fetch_metadata_page(species, 0)
     if first_data is None:
-        return {"species": [species], "brain_region": [], "cell_type": [], "archive": []}
+        return {"species": [species], "brain_region": [], "cell_type": [], "archive": [], "cell_types_by_region": {}}
 
     total_pages = first_data.get("page", {}).get("totalPages", 1)
 
     brain_regions: set = set()
     cell_types: set = set()
     archives: set = set()
+    region_cell_types: Dict[str, set] = {}
 
     def _absorb(data: Dict) -> bool:
         """Merge a page's values into the running sets; return True if any were new."""
         before = len(brain_regions) + len(cell_types) + len(archives)
         for n in data.get("_embedded", {}).get("neuronResources", []):
-            _collect(brain_regions, n.get("brain_region"))
-            _collect(cell_types, n.get("cell_type"))
+            regions = n.get("brain_region")
+            types = n.get("cell_type")
+            _collect(brain_regions, regions)
+            _collect(cell_types, types)
             _collect(archives, n.get("archive"))
+            for region in _as_list(regions):
+                for cell_type in _as_list(types):
+                    region_cell_types.setdefault(str(region), set()).add(str(cell_type))
         after = len(brain_regions) + len(cell_types) + len(archives)
         return after > before
 
@@ -171,6 +179,7 @@ def fetch_neuron_metadata(species: str) -> Dict:
         "brain_region": sorted(str(v) for v in brain_regions),
         "cell_type": sorted(str(v) for v in cell_types),
         "archive": sorted(str(v) for v in archives),
+        "cell_types_by_region": {r: sorted(v) for r, v in region_cell_types.items()},
     }
 
 
@@ -333,3 +342,9 @@ def _collect(target: set, value) -> None:
         target.update(v for v in value if v)
     elif value:
         target.add(value)
+
+
+def _as_list(value) -> List:
+    if isinstance(value, list):
+        return [v for v in value if v]
+    return [value] if value else []
