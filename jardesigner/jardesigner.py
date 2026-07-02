@@ -729,9 +729,6 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                                 suffix=suffix,
                                 temperature=self.temperature,
                             )
-                    for slot in ('X', 'Y', 'Z'):
-                        if getattr( proto, slot + 'power', 0 ) > 0:
-                            moose.element( proto.path + '/gate' + slot ).fillFromExpr()
                     if proto.name != cp['name']:
                         proto.name = cp['name']
 
