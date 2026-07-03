@@ -1,3 +1,7 @@
+# Ignore all OLD directories anywhere in the repo
+**/OLD/
+DOCUMENTATION
+
 .env
 .DS_Store
 .idea/

@@ -139,10 +139,11 @@ const ThreeDViewer = (props) => {
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [activeDrawableId, setActiveDrawableId] = useState(null);
   
-  const [rotationSpeedState, setRotationSpeedState] = useState(0); 
+  const [rotationSpeedState, setRotationSpeedState] = useState(0);
   const [isReflective, setIsReflective] = useState(false);
   const [verticalAxis, setVerticalAxis] = useState('y'); // 'y', 'z', or 'x'
   const [isWorldFlipped, setIsWorldFlipped] = useState(false);
+  const [showAllMoogliIcons, setShowAllMoogliIcons] = useState(false);
   
   // --- NEW: Ref to track previous simulation state ---
   const prevIsSimulatingRef = useRef();
@@ -191,6 +192,7 @@ const ThreeDViewer = (props) => {
       setVerticalAxis('y');
       setIsReflective(false);
       setRotationSpeedState(0);
+      setShowAllMoogliIcons(false);
     }
   }, [threeDConfig, setDrawableVisibility, onSceneBuilt]);
 
@@ -210,31 +212,35 @@ const ThreeDViewer = (props) => {
           managerRef.current.setActiveGroupId(activeDrawableId);
       }
   }, [drawableVisibility, activeDrawableId]);
-  
+
+  useEffect(() => {
+      if (managerRef.current) {
+          managerRef.current.setShowAllMoogliIcons(showAllMoogliIcons);
+      }
+  }, [showAllMoogliIcons]);
+
   // --- NEW: Auto-autoscale on sim complete ---
   useEffect(() => {
     const prevIsSimulating = prevIsSimulatingRef.current;
-  
+
     // Check for simulation run completion (true -> false)
     if (prevIsSimulating && !isSimulating && simulationFrames.length > 0) {
-      
       const newRangesMap = new Map();
       const visibleDrawables = drawables.filter(d => drawableVisibility[d.groupId]);
-  
+
       visibleDrawables.forEach(drawable => {
         const targetGroupId = drawable.groupId;
         let globalMin = Infinity;
         let globalMax = -Infinity;
-  
+
         simulationFrames.forEach(frame => {
-          if (frame.groupId === targetGroupId) {
-            frame.data.forEach(value => {
-              if (value < globalMin) globalMin = value;
-              if (value > globalMax) globalMax = value;
-            });
+          if (frame.groupId !== targetGroupId) return;
+          if (frame.f32_min !== undefined) {
+            if (frame.f32_min < globalMin) globalMin = frame.f32_min;
+            if (frame.f32_max > globalMax) globalMax = frame.f32_max;
           }
         });
-  
+
         if (isFinite(globalMin) && isFinite(globalMax)) {
           newRangesMap.set(targetGroupId, {
             vmin: globalMin.toExponential(2),
@@ -242,7 +248,6 @@ const ThreeDViewer = (props) => {
           });
         }
       });
-
       setColorRanges(prevColorRanges => {
         const updatedRanges = { ...prevColorRanges };
         newRangesMap.forEach((range, groupId) => {
@@ -251,7 +256,7 @@ const ThreeDViewer = (props) => {
         return updatedRanges;
       });
     }
-  
+
     // Store the current value for the next render
     prevIsSimulatingRef.current = isSimulating;
   }, [isSimulating, simulationFrames, drawables, drawableVisibility, setColorRanges]);
@@ -263,10 +268,11 @@ const ThreeDViewer = (props) => {
       const targetGroupId = activeDrawable.groupId;
       let globalMin = Infinity; let globalMax = -Infinity;
       simulationFrames.forEach(frame => {
-          if (frame.groupId === targetGroupId) frame.data.forEach(value => {
-              if (value < globalMin) globalMin = value;
-              if (value > globalMax) globalMax = value;
-          });
+          if (frame.groupId !== targetGroupId) return;
+          if (frame.f32_min !== undefined) {
+              if (frame.f32_min < globalMin) globalMin = frame.f32_min;
+              if (frame.f32_max > globalMax) globalMax = frame.f32_max;
+          }
       });
       if (isFinite(globalMin) && isFinite(globalMax)) {
            setColorRanges(prev => ({ ...prev, [targetGroupId]: { vmin: globalMin.toExponential(2), vmax: globalMax.toExponential(2) } }));
@@ -412,6 +418,10 @@ Aa: Auto-position`;
                                 label={<Typography variant="body2">{d.title || d.groupId}</Typography>}
                             />
                         ))}
+                        <FormControlLabel
+                            control={<Checkbox checked={showAllMoogliIcons} onChange={(e) => setShowAllMoogliIcons(e.target.checked)} size="small" />}
+                            label={<Typography variant="body2">Show 3D indicators on all compartments</Typography>}
+                        />
                     </Box>
                 )}
                 <Divider />
@@ -432,8 +442,8 @@ Aa: Auto-position`;
                         </RadioGroup>
                     </FormControl>
                     <Button variant="outlined" size="small" onClick={handleAutoscale} disabled={!activeDrawable}>Autoscale</Button>
-                    <TextField label="Vmin" size="small" variant="outlined" value={activeColorRange.vmin} onChange={(e) => handleColorRangeChange('vmin', e.target.value)} disabled={!activeDrawable} />
-                    <TextField label="Vmax" size="small" variant="outlined" value={activeColorRange.vmax} onChange={(e) => handleColorRangeChange('vmax', e.target.value)} disabled={!activeDrawable} />
+                    <TextField label="Minimum Value" size="small" variant="outlined" value={activeColorRange.vmin} onChange={(e) => handleColorRangeChange('vmin', e.target.value)} disabled={!activeDrawable} />
+                    <TextField label="Maximum Value" size="small" variant="outlined" value={activeColorRange.vmax} onChange={(e) => handleColorRangeChange('vmax', e.target.value)} disabled={!activeDrawable} />
                 </Box>
                 <Divider />
 

@@ -20,8 +20,10 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import helpText from './ElecMenuBox.Help.json';
+import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
+import helpText from './ChanMenuBox.Help.json';
 import { getCompartmentOptions, OPTION_USER_SPECIFIED } from '../../utils/menuHelpers';
+import ProtoPickerDialog from '../ProtoPickerDialog';
 
 // --- Helper Functions ---
 const getChannelSourceString = (componentType) => {
@@ -46,7 +48,7 @@ const getChannelSourceString = (componentType) => {
 
 const prototypeTypeOptions = [
     'Na_HH', 'Na', 'KDR_HH', 'KDR', 'K_A', 'Ca', 'LCa', 'Ca_conc',
-    'K_AHP', 'K_C', 'gluR', 'NMDAR', 'GABAR', 'leak', 'File'
+    'K_AHP', 'K_C', 'gluR', 'NMDAR', 'GABAR', 'leak', 'File', 'icg'
 ];
 
 const safeToString = (value, defaultValue = '') => {
@@ -83,7 +85,7 @@ const HelpField = React.memo(({ id, label, value, onChange, type = "text", fullW
 
 
 // --- Main Component ---
-const ElecMenuBox = ({ 
+const ChanMenuBox = ({ 
     onConfigurationChange, 
     currentConfig, 
     clientId, 
@@ -97,6 +99,8 @@ const ElecMenuBox = ({
             if (p.type === 'neuroml') {
                 componentType = 'File';
                 file = p.source || '';
+            } else if (p.type === 'icg') {
+                return { type: 'icg', name: p.name, file: '', source: p.source, manualName: true };
             }
             const matchingTypeOption = prototypeTypeOptions.find(opt => getChannelSourceString(opt) === p.source || opt === p.source);
             if (matchingTypeOption && p.type !== 'neuroml') {
@@ -104,7 +108,7 @@ const ElecMenuBox = ({
             }
             return { type: componentType, name: p.name, file: file, manualName: p.name !== componentType };
         }) || [];
-        return initialProtos.length > 0 ? initialProtos : [createDefaultPrototype()];
+        return initialProtos;
     });
 
     const [distributions, setDistributions] = useState(() => {
@@ -119,6 +123,7 @@ const ElecMenuBox = ({
 
     const [activePrototype, setActivePrototype] = useState(0);
     const [activeDistribution, setActiveDistribution] = useState(0);
+    const [pickerOpen, setPickerOpen] = useState(false);
 
     // --- State for User Specified Path Dialog ---
     const [customPathDialogOpen, setCustomPathDialogOpen] = useState(false);
@@ -152,9 +157,20 @@ const ElecMenuBox = ({
         return opts;
     }, [elecPaths, spinePaths, distributions, activeDistribution]);
 
-    const addPrototype = useCallback(() => {
-        setPrototypes((prev) => [...prev, createDefaultPrototype()]);
-        setActivePrototype(prototypes.length);
+    const handleProtoPickerSelect = useCallback((item) => {
+        let newProto;
+        if (item.source_type === 'builtin') {
+            newProto = { type: item.id, name: item.id, file: '', manualName: false };
+        } else if (item.suffix != null && item.modeldb_id != null) {
+            const name = item.staged_filename || `${item.suffix}_${item.modeldb_id}`;
+            newProto = { type: 'icg', name, file: '', source: name, manualName: false };
+        } else if (item.source_type === 'neuroml' || (item.source_type === 'file' && item.staged_filename)) {
+            newProto = { type: 'File', name: item.name, file: item.staged_filename || '', manualName: true };
+        }
+        if (newProto) {
+            setPrototypes(prev => [...prev, newProto]);
+            setActivePrototype(prototypes.length);
+        }
     }, [prototypes]);
 
     const removePrototype = useCallback((indexToRemove) => {
@@ -268,6 +284,9 @@ const ElecMenuBox = ({
                 if (protoState.type === 'File') {
                     schemaType = "neuroml";
                     schemaSource = protoState.file || "";
+                } else if (protoState.type === 'icg') {
+                    schemaType = "icg";
+                    schemaSource = protoState.source || protoState.name;
                 } else {
                     schemaSource = getChannelSourceString(protoState.type);
                 }
@@ -313,27 +332,30 @@ const ElecMenuBox = ({
 
             <Typography variant="h6" gutterBottom>Channel Definitions</Typography>
 
-            <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mt: 1, gap: 1 }}>
                 <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold', mb: 0 }}>Prototypes</Typography>
                 <Tooltip title={helpText.headings.prototypes} placement="right">
                     <IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton>
                 </Tooltip>
+                <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<LibraryBooksIcon fontSize="small" />}
+                    onClick={() => setPickerOpen(true)}
+                    sx={{ ml: 'auto' }}
+                >
+                    Browse Library…
+                </Button>
             </Box>
             <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                <Tabs value={activePrototype} onChange={(e, nv) => setActivePrototype(nv)} variant="scrollable" scrollButtons="auto" aria-label="Channel Prototypes">
+                <Tabs value={activePrototype} onChange={(e, nv) => setActivePrototype(nv)} sx={{ '& .MuiTabs-scroller': { overflow: 'visible !important' }, '& .MuiTabs-flexContainer': { flexWrap: 'wrap' } }} aria-label="Channel Prototypes">
                     {prototypes.map((p, i) => <Tab key={i} label={p.name || `Proto ${i + 1}`} />)}
-                    <IconButton onClick={addPrototype} sx={{ alignSelf: 'center', ml: '10px' }}><AddIcon /></IconButton>
                 </Tabs>
             </Box>
             {prototypes[activePrototype] && (
                 <Box sx={{ mt: 2, p: 2, border: '1px solid #e0e0e0', borderRadius: '4px' }}>
-                    <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6}>
-                            <HelpField id="type" label="Type" value={prototypes[activePrototype].type} onChange={(id,v) => updatePrototype(activePrototype, id, v)} helptext={helpText.prototypes.type} select>
-                                {prototypeTypeOptions.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
-                            </HelpField>
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
+                    <Grid container spacing={2} alignItems="center">
+                        <Grid item xs={12}>
                             <HelpField id="name" label="Prototype Name" value={prototypes[activePrototype].name} onChange={(id,v) => setCustomPrototypeName(activePrototype, v)} helptext={helpText.prototypes.name} required />
                         </Grid>
                         
@@ -364,6 +386,19 @@ const ElecMenuBox = ({
                                 </Box>
                             </Grid>
                         )}
+                        {prototypes[activePrototype].type === 'icg' && (
+                            <Grid item xs={12}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="ICG Channel Source"
+                                    variant="outlined"
+                                    value={prototypes[activePrototype].source || prototypes[activePrototype].name}
+                                    InputProps={{ readOnly: true }}
+                                    helperText="Imported from IonChannelGenealogy"
+                                />
+                            </Grid>
+                        )}
                     </Grid>
                     <Button variant="outlined" color="secondary" startIcon={<DeleteIcon />} onClick={() => removePrototype(activePrototype)} sx={{ mt: 2 }}>
                         Remove '{prototypes[activePrototype].name}'
@@ -378,7 +413,7 @@ const ElecMenuBox = ({
                  </Tooltip>
             </Box>
             <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                 <Tabs value={activeDistribution} onChange={(e, nv) => setActiveDistribution(nv)} variant="scrollable" scrollButtons="auto" aria-label="Channel Distributions">
+                 <Tabs value={activeDistribution} onChange={(e, nv) => setActiveDistribution(nv)} sx={{ '& .MuiTabs-scroller': { overflow: 'visible !important' }, '& .MuiTabs-flexContainer': { flexWrap: 'wrap' } }} aria-label="Channel Distributions">
                      {distributions.map((d, i) => <Tab key={i} label={`${d.prototype || 'New'} @ ${d.path || '?'}`} />)}
                      <IconButton onClick={addDistribution} sx={{ alignSelf: 'center', ml: '10px' }}><AddIcon /></IconButton>
                  </Tabs>
@@ -427,6 +462,15 @@ const ElecMenuBox = ({
                 </Box>
              )}
 
+            <ProtoPickerDialog
+                open={pickerOpen}
+                onClose={() => setPickerOpen(false)}
+                onSelect={handleProtoPickerSelect}
+                type="chan"
+                title="Select Channel Prototype"
+                clientId={clientId}
+            />
+
             {/* Custom Path Dialog */}
             <Dialog open={customPathDialogOpen} onClose={() => setCustomPathDialogOpen(false)}>
                 <DialogTitle>Enter User Specified Path</DialogTitle>
@@ -452,4 +496,4 @@ const ElecMenuBox = ({
     );
 };
 
-export default ElecMenuBox;
+export default ChanMenuBox;

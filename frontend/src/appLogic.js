@@ -44,7 +44,8 @@ const initialJsonData = {
   moogli: [],
   displayMoogli: {},
   moogliEvents: [],
-  stims: []
+  stims: [],
+  docFile: ''
 };
 
 const requiredKeys = ["filetype", "version"];
@@ -97,9 +98,9 @@ export const useAppLogic = () => {
     const [plotError, setPlotError] = useState('');
     const [simError, setSimError] = useState(null);
     const [isSimulating, setIsSimulating] = useState(false);
-    const [isPaused, setIsPaused] = useState(false);  // Pause state
     const [clientId] = useState(() => uuidv4());
-    
+    const sessionTokenRef = useRef('');
+
     const [activeSim, setActiveSim] = useState({ pid: null, data_channel_id: null, plot_filename: null });
     const socketRef = useRef(null);
     const frameQueueRef = useRef([]);
@@ -211,9 +212,12 @@ export const useAppLogic = () => {
 
     useEffect(() => {
         const processQueue = () => {
-            if (frameQueueRef.current.length > 0 && threeDManagerRefs.current[VIEW_IDS.RUN]) {
-                const frame = frameQueueRef.current.shift();
-                threeDManagerRefs.current[VIEW_IDS.RUN].updateSceneData(frame);
+            const manager = threeDManagerRefs.current[VIEW_IDS.RUN];
+            if (manager && frameQueueRef.current.length > 0) {
+                const deadline = performance.now() + 8;
+                while (frameQueueRef.current.length > 0 && performance.now() < deadline) {
+                    manager.updateSceneData(frameQueueRef.current.shift());
+                }
             }
             animationFrameId.current = requestAnimationFrame(processQueue);
         };
@@ -238,7 +242,6 @@ export const useAppLogic = () => {
 
         const onSimulationEnded = () => {
             setIsSimulating(false);
-            setIsPaused(false);  // Reset pause state when simulation ends
             frameQueueRef.current = [];
             const currentFilename = activeSimRef.current.plot_filename;
             if (currentFilename) {
@@ -253,21 +256,41 @@ export const useAppLogic = () => {
             }
         };
 
-        socket.on('connect', () => socket.emit('register_client', { clientId: clientId }));
+        socket.on('connect', () => socket.emit('register_client', { clientId, sessionToken: sessionTokenRef.current }));
+        socket.on('session_token', (data) => { sessionTokenRef.current = data.token ?? ''; });
 
         socket.on('simulation_data', (data) => {
             if (data?.type === 'sim_end') {
                 onSimulationEnded();
                 return;
             }
-            
+
+            if (data?.type === 'sim_time_update') {
+                setLiveFrameData(prev => ({
+                    ...prev,
+                    [VIEW_IDS.RUN]: { ...(prev[VIEW_IDS.RUN] ?? {}), timestamp: data.currentTime }
+                }));
+                return;
+            }
+
+            if (data?.type === 'sim_batch') {
+                const frames = data.frames || [];
+                if (frames.length > 0) {
+                    setSimulationFrames(prev => ({ ...prev, [VIEW_IDS.RUN]: frames }));
+                    const lastFrame = frames[frames.length - 1];
+                    setLiveFrameData(prev => ({ ...prev, [VIEW_IDS.RUN]: lastFrame }));
+                    frameQueueRef.current = [...frames];
+                }
+                return;
+            }
+
             const viewId = data.viewId;
             if (!viewId || !Object.values(VIEW_IDS).includes(viewId)) return;
-        
+
             if (data?.type === 'scene_init') {
                 setThreeDConfigs(prev => ({ ...prev, [viewId]: data.scene }));
                 setMeshMolsData(prev => ({ ...prev, [viewId]: data.meshMols }));
-                
+
                 if (data.reactionGraph) {
 					console.log("AppLogic: Received reactionGraph from Socket!", data.reactionGraph);
 
@@ -284,7 +307,7 @@ export const useAppLogic = () => {
             }
             else if (data?.filetype === 'jardesignerDataFrame') {
                 if (viewId === VIEW_IDS.RUN) frameQueueRef.current.push(data);
-                setSimulationFrames(prev => ({ ...prev, [viewId]: [...prev[viewId], data].sort((a, b) => a.timestamp - b.timestamp) }));
+                setSimulationFrames(prev => ({ ...prev, [viewId]: [...prev[viewId], data] }));
                 setLiveFrameData(prev => ({ ...prev, [viewId]: data }));
             }
         });
@@ -335,10 +358,11 @@ export const useAppLogic = () => {
                 socketRef.current.emit('join_sim_channel', { data_channel_id: newDataChannelId });
             }
 
-            const payload = { 
-                config_data: newJsonData, 
+            const payload = {
+                config_data: newJsonData,
                 client_id: clientId,
-                data_channel_id: newDataChannelId 
+                data_channel_id: newDataChannelId,
+                skip_missing_files_check: warnedAboutMissingRef.current
             };
 
             const response = await fetch(`${API_BASE_URL}/launch_simulation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -346,16 +370,34 @@ export const useAppLogic = () => {
             const result = await response.json();
             
             if (result.status === 'success') {
-                setActiveSim({ pid: result.pid, data_channel_id: result.data_channel_id, plot_filename: result.plot_filename });
+                const newPid = result.pid;
+                setActiveSim({ pid: newPid, data_channel_id: result.data_channel_id, plot_filename: result.plot_filename });
                 lastBuiltJsonDataRef.current = newJsonData;
+                if (pendingStartRuntimeRef.current !== null) {
+                    const rt = pendingStartRuntimeRef.current;
+                    pendingStartRuntimeRef.current = null;
+                    if (socketRef.current?.connected) {
+                        setPlotDataUrl(null); setIsPlotReady(false); setPlotError('');
+                        setSimError(null);
+                        setSimulationFrames(prev => ({ ...prev, [VIEW_IDS.RUN]: [] }));
+                        setThreeDConfigs(prev => ({ ...prev, [VIEW_IDS.RUN]: null }));
+                        handleRewindReplay();
+                        setIsSimulating(true);
+                        socketRef.current.emit('sim_command', { command: 'start', pid: newPid, params: { runtime: rt } });
+                    }
+                }
             } else { throw new Error(result.message || 'Failed to launch simulation'); }
         } catch (err) {
             console.error("Error during model build:", err);
             setActiveSim({ pid: null, data_channel_id: null, plot_filename: null });
+            pendingStartRuntimeRef.current = null;
         }
     }, [clientId, handleRewindReplay]);
     
     const lastBuiltJsonDataRef = useRef(null);
+    const pendingStartRuntimeRef = useRef(null);
+    const warnedAboutMissingRef = useRef(false);
+    const setWarnedAboutMissing = useCallback((val) => { warnedAboutMissingRef.current = val; }, []);
     const updateJsonData = useCallback((newDataPart) => {
         const updatedData = { ...initialJsonData, ...jsonData, ...newDataPart };
         const compactedData = compactJsonData(updatedData, initialJsonData);
@@ -375,7 +417,7 @@ export const useAppLogic = () => {
         updateJsonData({ cellProto: { type: 'file', source: filename } });
     }, [updateJsonData]);
 
-    const handleStartRun = useCallback(() => {
+    const handleStartRun = useCallback((runtimeOverride) => {
         if (!activeSim.pid || !socketRef.current?.connected) return;
         setPlotDataUrl(null); setIsPlotReady(false); setPlotError('');
         setSimError(null);
@@ -384,30 +426,12 @@ export const useAppLogic = () => {
             handleRewindReplay();
         } else { frameQueueRef.current = []; }
         setIsSimulating(true);
-        setIsPaused(false);  // Ensure not paused when starting
-        socketRef.current.emit('sim_command', { command: 'start', pid: activeSim.pid, params: { runtime: jsonData.runtime } });
+        const rt = (runtimeOverride !== undefined && runtimeOverride !== null) ? runtimeOverride : jsonData.runtime;
+        socketRef.current.emit('sim_command', { command: 'start', pid: activeSim.pid, params: { runtime: rt } });
     }, [activeSim.pid, jsonData.runtime, simulationFrames, handleRewindReplay]);
 
-    // Pause handler
-    const handlePauseRun = useCallback(() => {
-        if (!activeSim.pid || !socketRef.current?.connected) return;
-        socketRef.current.emit('sim_command', { command: 'pause', pid: activeSim.pid });
-        setIsSimulating(false);
-        setIsPaused(true);
-    }, [activeSim.pid]);
-
-    // Resume handler
-    const handleResumeRun = useCallback(() => {
-        if (!activeSim.pid || !socketRef.current?.connected) return;
-        socketRef.current.emit('sim_command', { command: 'resume', pid: activeSim.pid });
-        setIsSimulating(true);
-        setIsPaused(false);
-    }, [activeSim.pid]);
-
-    // Reset handler
     const handleResetRun = useCallback(() => {
         setIsSimulating(false);
-        setIsPaused(false);  // Reset pause state
         // Only clear the run view — keep the setup view (morphology/3D) intact.
         setSimulationFrames(prev => ({ ...prev, [VIEW_IDS.RUN]: [] }));
         setThreeDConfigs(prev => ({ ...prev, [VIEW_IDS.RUN]: null }));
@@ -422,6 +446,30 @@ export const useAppLogic = () => {
             socketRef.current.emit('sim_command', { command: 'reset', pid: activeSim.pid });
         }
     }, [activeSim.pid, handleRewindReplay]);
+
+    const handleBuildAndStartRun = useCallback((runConfig) => {
+        const latestData = { ...initialJsonData, ...jsonData, ...runConfig };
+        const compactedData = compactJsonData(latestData, initialJsonData);
+        // Exclude runtime from rebuild decision: it is passed at run time to moose.start()
+        // and does not affect the MOOSE model structure.
+        const withoutRuntime = ({ runtime: _r, ...rest }) => rest;
+        const structurallyUnchanged = activeSim.pid &&
+            isEqual(withoutRuntime(compactedData), withoutRuntime(lastBuiltJsonDataRef.current ?? {}));
+        if (structurallyUnchanged) {
+            setRunParameters(runConfig);
+            handleStartRun(runConfig.runtime);
+        } else {
+            pendingStartRuntimeRef.current = runConfig.runtime;
+            setJsonData(latestData);
+            setJsonContent(JSON.stringify(compactedData, null, 2));
+            buildModelOnServer(compactedData);
+        }
+    }, [jsonData, activeSim.pid, handleStartRun, setRunParameters, buildModelOnServer]);
+
+    const handleStopRun = useCallback(() => {
+        if (!activeSim.pid || !socketRef.current?.connected) return;
+        socketRef.current.emit('sim_command', { command: 'stop', pid: activeSim.pid });
+    }, [activeSim.pid]);
 
     const handleSelectionChange = useCallback((viewId, selection, isCtrlClick) => {
         setClickSelected(prev => {
@@ -457,18 +505,34 @@ export const useAppLogic = () => {
     const getChemProtos = useCallback(() => jsonData?.chemProto?.map(p => p?.name).filter(Boolean) || [], [jsonData?.chemProto]);
     const toggleMenu = (menu) => setActiveMenu(prev => (prev === menu ? null : menu));
 
+    const handleLoadTutorial = useCallback(async (name) => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/load_example/${clientId}/${encodeURIComponent(name)}`, { method: 'POST' });
+            if (!response.ok) throw new Error(await response.text());
+            const data = await response.json();
+            if (data.json) {
+                const parsed = JSON.parse(data.json);
+                updateJsonData(parsed);
+            }
+        } catch (err) {
+            console.error('Error loading tutorial:', err);
+        }
+    }, [clientId, updateJsonData]);
+
     const baseProps = {
         activeMenu, toggleMenu, jsonData, jsonContent,
-        plotDataUrl, isPlotReady, plotError, isSimulating, isPaused, activeSim, clientId,
-        updateJsonData, setRunParameters, handleStartRun, handlePauseRun, handleResumeRun, handleResetRun, updateJsonString,
-        handleClearModel, getCurrentJsonData, getChemProtos, setActiveMenu, handleMorphologyFileChange,
+        plotDataUrl, isPlotReady, plotError, isSimulating, activeSim, clientId,
+        updateJsonData, setRunParameters, handleStartRun, handleResetRun,
+        handleBuildAndStartRun, handleStopRun, updateJsonString,
+        handleClearModel, getCurrentJsonData, getChemProtos, setActiveMenu, handleMorphologyFileChange, setWarnedAboutMissing,
         replayTime, totalRuntime, isReplaying, replayInterval,
-        setReplayInterval, liveFrameData,
-        onStartReplay: handleStartReplay, onPauseReplay: handlePauseReplay,
+		setReplayInterval, liveFrameData,
+		onStartReplay: handleStartReplay, onPauseReplay: handlePauseReplay,
         onRewindReplay: handleRewindReplay, onSeekReplay: handleSeekReplay,
         handleStartReplay, handlePauseReplay, handleRewindReplay, handleSeekReplay,
         simError, setSimError,
-        elecPaths, spinePaths
+        elecPaths, spinePaths,
+        handleLoadTutorial
     };
 
     if (isStandalone) {
