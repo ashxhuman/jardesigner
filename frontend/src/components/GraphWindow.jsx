@@ -195,22 +195,26 @@ const GraphWindow = memo(({ plotDataUrl, isPlotReady, plotError }) => {
 
   useEffect(() => {
     if (isPlotReady && plotDataUrl) {
+        let cancelled = false;
         setLoading(true);
         setFetchError(null);
-        fetch(plotDataUrl)
+        fetch(plotDataUrl, { cache: 'no-store' })
             .then(res => {
                 if (!res.ok) throw new Error("Failed to fetch plot data");
                 return res.json();
             })
             .then(jsonData => {
+                if (cancelled) return;
                 setData(jsonData);
                 setLoading(false);
             })
             .catch(err => {
+                if (cancelled) return;
                 console.error("Error loading plot json:", err);
                 setFetchError(err.message);
                 setLoading(false);
             });
+        return () => { cancelled = true; };
     } else {
         setData(null);
     }

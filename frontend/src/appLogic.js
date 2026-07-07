@@ -503,14 +503,19 @@ export const useAppLogic = () => {
     const getChemProtos = useCallback(() => jsonData?.chemProto?.map(p => p?.name).filter(Boolean) || [], [jsonData?.chemProto]);
     const toggleMenu = (menu) => setActiveMenu(prev => (prev === menu ? null : menu));
 
+    const tutorialRequestIdRef = useRef(0);
     const handleLoadTutorial = useCallback(async (name) => {
+        const requestId = ++tutorialRequestIdRef.current;
         try {
             const response = await fetch(`${API_BASE_URL}/load_example/${clientId}/${encodeURIComponent(name)}`, { method: 'POST' });
             if (!response.ok) throw new Error(await response.text());
             const data = await response.json();
+            // A newer tutorial request has since been made — discard this stale response.
+            if (requestId !== tutorialRequestIdRef.current) return;
             if (data.json) {
                 const parsed = JSON.parse(data.json);
-                updateJsonData(parsed);
+                const mergedData = { ...initialJsonData, ...parsed };
+                updateJsonData(mergedData);
             }
         } catch (err) {
             console.error('Error loading tutorial:', err);
