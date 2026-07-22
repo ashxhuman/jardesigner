@@ -1,0 +1,45 @@
+{
+  "species": [
+    "African wild dog"
+  ],
+  "brain_region": [
+    "deep",
+    "frontal",
+    "neocortex",
+    "primary motor",
+    "superficial"
+  ],
+  "cell_type": [
+    "gigantopyramidal",
+    "principal cell",
+    "pyramidal"
+  ],
+  "archive": [
+    "Jacobs"
+  ],
+  "cell_types_by_region": {
+    "neocortex": [
+      "gigantopyramidal",
+      "principal cell",
+      "pyramidal"
+    ],
+    "frontal": [
+      "gigantopyramidal",
+      "principal cell",
+      "pyramidal"
+    ],
+    "primary motor": [
+      "gigantopyramidal",
+      "principal cell",
+      "pyramidal"
+    ],
+    "deep": [
+      "principal cell",
+      "pyramidal"
+    ],
+    "superficial": [
+      "principal cell",
+      "pyramidal"
+    ]
+  }
+}

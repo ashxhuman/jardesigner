@@ -1,0 +1,66 @@
+{
+  "species": [
+    "Apis mellifera"
+  ],
+  "brain_region": [
+    "Central complex",
+    "Left Adult Central Complex",
+    "Right Adult Central Complex",
+    "dorsal central body",
+    "posterior protocerebral lobe",
+    "subesophageal ganglion"
+  ],
+  "cell_type": [
+    "DL-Int-1",
+    "Vibration sensitive",
+    "antennal lobe-projecting",
+    "interneuron",
+    "lamina-projecting",
+    "lobula valley tract loop-projecting",
+    "lobula-projecting",
+    "medulla-projecting",
+    "ocelli-projecting",
+    "pigment dispersing factor (PDF)-positive",
+    "posterior optic commissure (POC)-projecting"
+  ],
+  "archive": [
+    "Beer_Foerster",
+    "Ikeno"
+  ],
+  "cell_types_by_region": {
+    "subesophageal ganglion": [
+      "DL-Int-1",
+      "Vibration sensitive",
+      "interneuron"
+    ],
+    "posterior protocerebral lobe": [
+      "DL-Int-1",
+      "Vibration sensitive",
+      "interneuron"
+    ],
+    "dorsal central body": [
+      "DL-Int-1",
+      "Vibration sensitive",
+      "interneuron"
+    ],
+    "Central complex": [
+      "antennal lobe-projecting",
+      "interneuron",
+      "lamina-projecting",
+      "lobula valley tract loop-projecting",
+      "lobula-projecting",
+      "medulla-projecting",
+      "ocelli-projecting",
+      "pigment dispersing factor (PDF)-positive",
+      "posterior optic commissure (POC)-projecting"
+    ],
+    "Right Adult Central Complex": [
+      "interneuron",
+      "pigment dispersing factor (PDF)-positive"
+    ],
+    "Left Adult Central Complex": [
+      "interneuron",
+      "pigment dispersing factor (PDF)-positive"
+    ]
+  }
+}

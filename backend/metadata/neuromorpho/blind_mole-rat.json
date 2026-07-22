@@ -1,0 +1,32 @@
+{
+  "species": [
+    "Blind mole-rat"
+  ],
+  "brain_region": [
+    "ganglion layer",
+    "retina"
+  ],
+  "cell_type": [
+    "Intrinsically photosensitive",
+    "ganglion",
+    "melanopsin-positive",
+    "principal cell"
+  ],
+  "archive": [
+    "Hannibal"
+  ],
+  "cell_types_by_region": {
+    "retina": [
+      "Intrinsically photosensitive",
+      "ganglion",
+      "melanopsin-positive",
+      "principal cell"
+    ],
+    "ganglion layer": [
+      "Intrinsically photosensitive",
+      "ganglion",
+      "melanopsin-positive",
+      "principal cell"
+    ]
+  }
+}

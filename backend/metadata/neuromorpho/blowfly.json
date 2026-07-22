@@ -1,0 +1,31 @@
+{
+  "species": [
+    "blowfly"
+  ],
+  "brain_region": [
+    "lobula complex",
+    "lobula plate",
+    "optic lobe"
+  ],
+  "cell_type": [
+    "interneuron",
+    "tangential"
+  ],
+  "archive": [
+    "Borst"
+  ],
+  "cell_types_by_region": {
+    "optic lobe": [
+      "interneuron",
+      "tangential"
+    ],
+    "lobula complex": [
+      "interneuron",
+      "tangential"
+    ],
+    "lobula plate": [
+      "interneuron",
+      "tangential"
+    ]
+  }
+}

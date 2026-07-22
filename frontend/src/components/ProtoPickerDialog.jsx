@@ -13,6 +13,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import NeuromorphoSearchForm from './neuromorpho/NeuromorphoSearchForm';
 import AllenBrainSearchForm from './allenbrain/AllenBrainSearchForm';
 import ICGSearchForm from './icg/ICGSearchForm';
+import BioModelsSearchForm from './biomodels/BioModelsSearchForm';
 
 // Keyed by proto type then DB name.
 // SearchForm: component receiving { onResults, baseUrl } — renders the search form,
@@ -28,7 +29,7 @@ const DB_ADAPTERS = {
         // 'NeuroML-DB': { SearchForm: NeuroMLDBSearchForm },
     },
     chem:  {
-        // BioModels: { SearchForm: BioModelsSearchForm },
+        BioModels: { SearchForm: BioModelsSearchForm },
         // DOQCS:     { SearchForm: DOQCSSearchForm },
     },
 };
@@ -36,7 +37,7 @@ const DB_ADAPTERS = {
 const DB_OPTIONS = {
     morpho: ['Local', 'NeuroMorpho', 'AllenBrain'],
     chan:   ['Local', 'ICG'],
-    chem:   ['Local', 'DOQCS'],
+    chem:   ['Local', 'BioModels', 'DOQCS'],
 };
 
 const UPLOAD_ACCEPT = {

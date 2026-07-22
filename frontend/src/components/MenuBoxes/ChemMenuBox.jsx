@@ -202,7 +202,10 @@ const ChemMenuBox = ({
             newProto = { type: item.id, name: item.id, source: '', manualName: false };
         } else if ((item.source_type === 'kkit' || item.source_type === 'sbml') && item.staged_filename) {
             const displayType = item.source_type === 'sbml' ? 'SBML' : 'kkit';
-            const safeName = item.name.replace(/\.[^.]+$/, '');
+            const safeName = item.name
+                .replace(/\.[^.]+$/, '')
+                .replace(/[^A-Za-z0-9_]+/g, '_')
+                .replace(/^_+|_+$/g, '') || item.id;
             newProto = { type: displayType, name: safeName, source: item.staged_filename, manualName: true };
         }
         if (newProto) {

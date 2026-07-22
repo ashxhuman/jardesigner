@@ -46,6 +46,10 @@ from icg_database.icg_routes import icg_routes
 from icg_database.icg import get_channel_detail as icg_get_channel_detail, stage_channel as icg_stage
 app.register_blueprint(icg_routes, url_prefix="/icg")
 
+from biomodels.biomodels_routes import biomodels_routes
+from biomodels.biomodels import get_model_detail as bm_get_model_detail, stage_model as bm_stage
+app.register_blueprint(biomodels_routes, url_prefix="/biomodels")
+
 
 # --- Store running process and session info ---
 running_processes = {}
@@ -284,6 +288,12 @@ def get_proto_detail(proto_id):
                 pass
         return jsonify({})
 
+    if proto_id.startswith('bm_'):
+        try:
+            return jsonify(bm_get_model_detail(proto_id[3:]))
+        except Exception:
+            return jsonify({})
+
     for proto_type in ('morpho', 'chan', 'chem'):
         data = _load_registry(proto_type)
         if data:
@@ -344,6 +354,12 @@ def stage_proto_file(proto_id, client_id):
             return jsonify({'error': 'Invalid ICG proto ID'}), 400
         try:
             return jsonify(icg_stage(int(m.group(1)), m.group(2), client_id))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    if proto_id.startswith('bm_'):
+        try:
+            return jsonify(bm_stage(proto_id[3:], client_id))
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
