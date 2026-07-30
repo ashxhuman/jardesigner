@@ -10,7 +10,7 @@ from pathlib import Path
 
 import requests
 
-BASE_URL = "https://www.ebi.ac.uk/biomodels"
+BASE_URL = "https://www.biomodels.org"
 _HEADERS = {"User-Agent": "jardesigner/1.0"}
 
 _USER_UPLOADS_DIR = Path(__file__).resolve().parent.parent / "user_uploads"
@@ -89,6 +89,14 @@ def get_model_detail(model_id: str) -> dict:
         fields.append({'label': 'Organism', 'value': organism})
 
     result = {'fields': fields}
+
+    diagram = next(
+        (f['name'] for f in (info.get('files') or {}).get('additional', [])
+         if f.get('name', '').lower().endswith('.png') and f['name'].lower() != 'curation_image.png'),
+        None,
+    )
+    if diagram:
+        result['image_url'] = f'{BASE_URL}/model/download/{model_id}?filename={diagram}'
 
     pub = info.get('publication') or {}
     if pub:

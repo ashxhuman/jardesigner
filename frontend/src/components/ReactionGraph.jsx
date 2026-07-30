@@ -3,6 +3,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { Box, Paper, Typography, IconButton, ToggleButton, ToggleButtonGroup, Collapse, List, ListItem, ListItemIcon, ListItemText } from '@mui/material';
 import { ZoomIn, ZoomOut, Refresh, Layers, ExpandLess, ExpandMore } from '@mui/icons-material';
 import { parseSplineToPath } from '../utils/splineUtils';
+import SbgnReactionGraph from './SbgnReactionGraph';
 
 // --- GEOMETRY HELPERS ---
 
@@ -331,9 +332,14 @@ const ReactionGraph = (props) => {
         <ToggleButtonGroup value={viewMode} exclusive onChange={(e, val) => val && setViewMode(val)} size="small">
           <ToggleButton value="reaction">Reaction</ToggleButton>
           <ToggleButton value="block">Block</ToggleButton>
+          <ToggleButton value="sbgn">SBGN</ToggleButton>
         </ToggleButtonGroup>
       </Paper>
 
+      {viewMode === 'sbgn' ? (
+        <SbgnReactionGraph graphData={graphData} />
+      ) : (
+      <>
       {/* Main Graph Area */}
       <TransformWrapper 
           initialScale={1} minScale={0.01} maxScale={100} limitToBounds={false} centerOnInit
@@ -382,6 +388,8 @@ const ReactionGraph = (props) => {
              );
           })}
         </Paper>
+      )}
+      </>
       )}
     </Box>
   );
