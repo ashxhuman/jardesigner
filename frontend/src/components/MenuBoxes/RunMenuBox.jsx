@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Box, Typography, TextField, Grid, Button, CircularProgress, Alert, Divider, Checkbox, FormControlLabel, Tooltip } from '@mui/material';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Box, Typography, TextField, Grid2 as Grid, Button, CircularProgress, Alert, Divider, Checkbox, FormControlLabel, Tooltip } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+
+const CHEM_FIELDS = new Set(['conc', 'n', 'concInit', 'nInit', 'volume']);
 
 const helpText = {
     runControls: { totalRuntime: "The total duration for the simulation run in seconds.", currentTime: "The current time of the active simulation." },
@@ -58,6 +60,8 @@ const RunMenuBox = ({
     activeSimPid,
     liveFrameData,
     isReplaying,
+    modelDirty,
+    flushRef,
 }) => {
 
     const [runtime, setRuntime] = useState(() => safeToString(currentConfig?.runtime, defaultRunConfig.runtime));
@@ -86,15 +90,13 @@ const RunMenuBox = ({
     const [currentTime, setCurrentTime] = useState(0.0);
     const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
 
-    const startButtonText = isSimulating
-        ? 'Running...'
-        : currentTime > 0
-            ? 'Continue'
-            : 'Start';
-
     const onConfigurationChangeRef = useRef(onConfigurationChange);
     useEffect(() => { onConfigurationChangeRef.current = onConfigurationChange; }, [onConfigurationChange]);
-    
+
+    // Saves elecPlotDt, funcDt, and per-drawable moogli dt before turnOffElec overrides them
+    const savedDtsRef = useRef(null);
+
+
     useEffect(() => {
         if (isReplaying) {
             setStatusMessage({ type: 'info', text: 'Replaying simulation in 3D viewer...' });
@@ -107,12 +109,16 @@ const RunMenuBox = ({
         }
     }, [isSimulating, isReplaying, activeSimPid, currentTime]);
 
-	useEffect(() => {
-    	const frameForRunView = liveFrameData?.run;
-    	if (frameForRunView && typeof frameForRunView.timestamp === 'number') {
-        	setCurrentTime(frameForRunView.timestamp);
-    	}
-	}, [liveFrameData]);
+    useEffect(() => {
+        const frameForRunView = liveFrameData?.run;
+        if (frameForRunView && typeof frameForRunView.timestamp === 'number') {
+            setCurrentTime(frameForRunView.timestamp);
+        }
+    }, [liveFrameData]);
+
+    useEffect(() => {
+        setCurrentTime(0.0);
+    }, [activeSimPid]);
 
     const handleRuntimeChange = (value) => setRuntime(value);
     const updateClock = (field, value) => setClocks((prev) => ({ ...prev, [field]: value }));
@@ -121,7 +127,59 @@ const RunMenuBox = ({
     const handleTurnOffElecChange = () => {
         const isTurningOff = !configSettings.turnOffElec;
         setConfigSettings(prev => ({ ...prev, turnOffElec: isTurningOff }));
-        setRuntime(isTurningOff ? '100' : '0.3');
+
+        if (isTurningOff) {
+            const newRuntime = '100';
+            // Save values that will be overridden, including current runtime
+            savedDtsRef.current = {
+                runtime,
+                elecPlot: clocks.elecPlot,
+                function: clocks.function,
+                moogli: currentConfig.moogli?.map(m => m.dt) ?? [],
+            };
+            setRuntime(newRuntime);
+            const runtimeNum = parseFloat(newRuntime);
+            const newFuncDt = parseFloat(clocks.chem) || parseFloat(defaultRunConfig.chemDt);
+            setClocks(prev => ({ ...prev, elecPlot: newRuntime, function: String(newFuncDt) }));
+            const chemFields = ['conc', 'n', 'concInit', 'nInit', 'volume'];
+            const newMoogli = currentConfig.moogli?.length > 0
+                ? currentConfig.moogli.map(m => chemFields.includes(m.field) ? m : { ...m, dt: runtimeNum })
+                : undefined;
+            onConfigurationChange({
+                turnOffElec: true,
+                runtime: runtimeNum,
+                elecPlotDt: runtimeNum,
+                funcDt: newFuncDt,
+                ...(newMoogli ? { moogli: newMoogli } : {}),
+            });
+        } else {
+            const saved = savedDtsRef.current;
+            const restoredRuntime = saved?.runtime ?? '0.3';
+            setRuntime(restoredRuntime);
+            if (saved) {
+                setClocks(prev => ({
+                    ...prev,
+                    elecPlot: saved.elecPlot,
+                    function: saved.function,
+                }));
+                const restoredMoogli = (currentConfig.moogli?.length > 0 && saved.moogli.length > 0)
+                    ? currentConfig.moogli.map((m, i) => ({
+                        ...m,
+                        dt: saved.moogli[i] !== undefined ? saved.moogli[i] : m.dt,
+                      }))
+                    : undefined;
+                onConfigurationChange({
+                    turnOffElec: false,
+                    runtime: parseFloat(restoredRuntime),
+                    elecPlotDt: parseFloat(saved.elecPlot) || parseFloat(defaultRunConfig.elecPlotDt),
+                    funcDt: parseFloat(saved.function) || parseFloat(defaultRunConfig.funcDt),
+                    ...(restoredMoogli ? { moogli: restoredMoogli } : {}),
+                });
+                savedDtsRef.current = null;
+            } else {
+                onConfigurationChange({ turnOffElec: false });
+            }
+        }
     };
 
     const buildConfigPayload = useCallback(() => {
@@ -155,6 +213,7 @@ const RunMenuBox = ({
     // Save config to parent only when this menu box is closed (unmounted).
     // Empty dep array: the cleanup only runs on unmount, not on every local state change.
     // buildConfigPayloadRef ensures we always call the latest version on unmount.
+
     useEffect(() => {
         return () => {
             if (onConfigurationChangeRef.current) {
@@ -162,6 +221,12 @@ const RunMenuBox = ({
             }
         };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+        if (!flushRef) return;
+        flushRef.current = () => buildConfigPayloadRef.current();
+        return () => { flushRef.current = null; };
+    }, [flushRef]);
 
     const handleStart = () => {
         const latestConfig = buildConfigPayload();
@@ -194,24 +259,83 @@ const RunMenuBox = ({
         }
     };
 
+    const startButtonText = currentTime > 0 ? 'Continue' : 'Start';
+
+    const isEntirelyChemical = useMemo(() => {
+        const allEntries = [
+            ...(currentConfig?.plots || []),
+            ...(currentConfig?.moogli || []),
+            ...(currentConfig?.files || []),
+        ];
+        return allEntries.length > 0 && allEntries.every(e => CHEM_FIELDS.has(e.field));
+    }, [currentConfig?.plots, currentConfig?.moogli, currentConfig?.files]);
+
+    const hasNoOutputs = (currentConfig?.plots?.length ?? 0) === 0 &&
+        (currentConfig?.moogli?.length ?? 0) === 0 &&
+        (currentConfig?.files?.length ?? 0) === 0;
+
+    const runtimeNum = Number(runtime);
+    const runtimeError = isNaN(runtimeNum) || runtimeNum <= 0 ? 'Must be a positive number' : null;
+
+    const elecNum = Number(clocks.elec);
+    const chemNum = Number(clocks.chem);
+    const diffNum = Number(clocks.diffusion);
+    const elecPlotNum = Number(clocks.elecPlot);
+    const chemPlotNum = Number(clocks.chemPlotDt);
+    const funcNum = Number(clocks.function);
+
+    const elecError = !configSettings.turnOffElec && (isNaN(elecNum) || elecNum <= 0) ? 'Must be a positive number' : null;
+    const chemError = isNaN(chemNum) || chemNum <= 0 ? 'Must be a positive number' : null;
+    const diffError = isNaN(diffNum) || diffNum <= 0 ? 'Must be a positive number' : null;
+    const elecPlotError = !configSettings.turnOffElec && (isNaN(elecPlotNum) || elecPlotNum <= 0) ? 'Must be a positive number' : null;
+    const chemPlotError = isNaN(chemPlotNum) || chemPlotNum <= 0 ? 'Must be a positive number' : null;
+    const funcError = isNaN(funcNum) || funcNum <= 0 ? 'Must be a positive number' : null;
+
+    const elecPlotWarn = !configSettings.turnOffElec && !elecError && !elecPlotError && elecPlotNum < elecNum
+        ? 'Elec plot Dt smaller than elec Dt — recording limited to elec Dt'
+        : null;
+    const chemPlotWarn = !chemError && !chemPlotError && chemPlotNum < chemNum
+        ? 'Chem plot Dt smaller than chem Dt — recording limited to chem Dt'
+        : null;
+
+    const tempNum = Number(configSettings.temperature);
+    const tempWarn = !isNaN(tempNum) && (tempNum < 0 || tempNum > 45)
+        ? 'Outside typical biological range (0–45°C)'
+        : null;
+
     return (
-        <Box sx={{ p: 2, background: '#f5f5f5', borderRadius: 2 }}>
+        <Box sx={{ p: 2, bgcolor: 'background.paper' }}>
             <Grid container spacing={1} sx={{ mb: 2 }}>
-                <Grid item xs={4}><Button variant="contained" fullWidth startIcon={isSimulating ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />} sx={{ bgcolor: 'success.main', '&:hover': { bgcolor: 'success.dark' } }} onClick={handleStart} disabled={isSimulating || !activeSimPid}>{startButtonText}</Button></Grid>
-                <Grid item xs={4}><Button variant="contained" fullWidth startIcon={<StopIcon />} sx={{ bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' } }} onClick={handleStop} disabled={!isSimulating}>Stop</Button></Grid>
-                <Grid item xs={4}><Button variant="contained" fullWidth startIcon={<RestartAltIcon />} sx={{ bgcolor: '#ffeb3b', color: 'rgba(0, 0, 0, 0.87)', '&:hover': { bgcolor: '#fdd835' } }} onClick={handleReset} disabled={!activeSimPid}>Reset</Button></Grid>
+                <Grid size={4}><Button variant="contained" color="success" fullWidth startIcon={isSimulating ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />} onClick={handleStart} disabled={isSimulating || (currentTime > 0 && !activeSimPid)}>{startButtonText}</Button></Grid>
+                <Grid size={4}><Button variant="contained" color="error" fullWidth startIcon={<StopIcon />} onClick={handleStop} disabled={!isSimulating}>Stop</Button></Grid>
+                <Grid size={4}><Button variant="contained" fullWidth startIcon={<RestartAltIcon />} sx={{ bgcolor: '#ffeb3b', color: 'rgba(0,0,0,0.87)', '&:hover': { bgcolor: '#fdd835' } }} onClick={handleReset} disabled={!activeSimPid}>Reset</Button></Grid>
             </Grid>
 
-            {statusMessage.text && <Alert severity={statusMessage.type || 'info'} sx={{ mb: 2, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{statusMessage.text}</Alert>}
+            {statusMessage.text && !(modelDirty && !activeSimPid && !isSimulating) && <Alert severity={statusMessage.type || 'info'} sx={{ mb: 2, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{statusMessage.text}</Alert>}
+            {modelDirty && !isSimulating && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                    Model has changed — Start will rebuild before running.
+                </Alert>
+            )}
+            {hasNoOutputs && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                    No plots, 3D displays, or file saves are configured — the simulation will run but produce no visible output.
+                </Alert>
+            )}
+            {isEntirelyChemical && !configSettings.turnOffElec && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                    All outputs (plots, 3D, file saves) use chemical fields — consider enabling <strong>Turn Off Elec</strong> to skip electrical calculations and allow longer chemical time steps.
+                </Alert>
+            )}
 
             <Grid container spacing={1.5} sx={{ mb: 2 }}>
-                <Grid item xs={6}>
+                <Grid size={6}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <TextField fullWidth size="small" label="Total Runtime (s)" type="text" value={runtime} onChange={(e) => handleRuntimeChange(e.target.value)} />
+                        <TextField fullWidth size="small" label="Total Runtime (s)" type="text" value={runtime} onChange={(e) => handleRuntimeChange(e.target.value)} error={!!runtimeError} helperText={runtimeError || undefined} />
                         <InfoTooltip title={helpText.runControls.totalRuntime} />
                     </Box>
                 </Grid>
-                <Grid item xs={6}>
+                <Grid size={6}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <TextField fullWidth size="small" label="Current Time (s)" type="number" value={currentTime.toFixed(4)} InputProps={{ readOnly: true }} variant="filled" />
                         <InfoTooltip title={helpText.runControls.currentTime} />
@@ -227,16 +351,16 @@ const RunMenuBox = ({
             </Box>
 
             <Grid container spacing={1.5} sx={{mb: 2}}>
-                <Grid item xs={12} sm={6} container spacing={1.5}>
-                    <Grid item xs={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Elec Dt (s)" value={clocks.elec} onChange={(e) => updateClock('elec', e.target.value)} /><InfoTooltip title={helpText.clocks.elecDt} /></Box></Grid>
-                    <Grid item xs={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Chem Dt (s)" value={clocks.chem} onChange={(e) => updateClock('chem', e.target.value)} /><InfoTooltip title={helpText.clocks.chemDt} /></Box></Grid>
-                    <Grid item xs={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Diffusion Dt (s)" value={clocks.diffusion} onChange={(e) => updateClock('diffusion', e.target.value)} /><InfoTooltip title={helpText.clocks.diffusionDt} /></Box></Grid>
+                <Grid size={{ xs: 12, sm: 6 }} container spacing={1.5}>
+                    <Grid size={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Elec Dt (s)" value={clocks.elec} onChange={(e) => updateClock('elec', e.target.value)} disabled={configSettings.turnOffElec} error={!!elecError} helperText={elecError || undefined} /><InfoTooltip title={helpText.clocks.elecDt} /></Box></Grid>
+                    <Grid size={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Chem Dt (s)" value={clocks.chem} onChange={(e) => updateClock('chem', e.target.value)} error={!!chemError} helperText={chemError || undefined} /><InfoTooltip title={helpText.clocks.chemDt} /></Box></Grid>
+                    <Grid size={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Diffusion Dt (s)" value={clocks.diffusion} onChange={(e) => updateClock('diffusion', e.target.value)} error={!!diffError} helperText={diffError || undefined} /><InfoTooltip title={helpText.clocks.diffusionDt} /></Box></Grid>
                 </Grid>
-                <Grid item xs={12} sm={6} container spacing={1.5}>
-                    <Grid item xs={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Elec Plot Dt (s)" value={clocks.elecPlot} onChange={(e) => updateClock('elecPlot', e.target.value)} /><InfoTooltip title={helpText.clocks.elecPlotDt} /></Box></Grid>
-                    <Grid item xs={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Chem Plot Dt (s)" value={clocks.chemPlotDt} onChange={(e) => updateClock('chemPlotDt', e.target.value)} /><InfoTooltip title={helpText.clocks.chemPlotDt} /></Box></Grid>
-                    <Grid item xs={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Function Dt (s)" value={clocks.function} onChange={(e) => updateClock('function', e.target.value)} /><InfoTooltip title={helpText.clocks.functionDt} /></Box></Grid>
-                    <Grid item xs={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Status Dt (s)" value={clocks.status} onChange={(e) => updateClock('status', e.target.value)} /><InfoTooltip title={helpText.clocks.statusDt} /></Box></Grid>
+                <Grid size={{ xs: 12, sm: 6 }} container spacing={1.5}>
+                    <Grid size={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Elec Plot Dt (s)" value={clocks.elecPlot} onChange={(e) => updateClock('elecPlot', e.target.value)} disabled={configSettings.turnOffElec} error={!!elecPlotError} helperText={elecPlotError || elecPlotWarn || undefined} FormHelperTextProps={!elecPlotError && elecPlotWarn ? { sx: { color: 'warning.main' } } : undefined} /><InfoTooltip title={helpText.clocks.elecPlotDt} /></Box></Grid>
+                    <Grid size={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Chem Plot Dt (s)" value={clocks.chemPlotDt} onChange={(e) => updateClock('chemPlotDt', e.target.value)} error={!!chemPlotError} helperText={chemPlotError || chemPlotWarn || undefined} FormHelperTextProps={!chemPlotError && chemPlotWarn ? { sx: { color: 'warning.main' } } : undefined} /><InfoTooltip title={helpText.clocks.chemPlotDt} /></Box></Grid>
+                    <Grid size={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Function Dt (s)" value={clocks.function} onChange={(e) => updateClock('function', e.target.value)} error={!!funcError} helperText={funcError || undefined} /><InfoTooltip title={helpText.clocks.functionDt} /></Box></Grid>
+                    <Grid size={12}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><TextField fullWidth size="small" label="Status Dt (s)" value={clocks.status} onChange={(e) => updateClock('status', e.target.value)} /><InfoTooltip title={helpText.clocks.statusDt} /></Box></Grid>
                 </Grid>
             </Grid>
 
@@ -248,15 +372,15 @@ const RunMenuBox = ({
 
             <Typography variant="body2" gutterBottom sx={{ mt: 1, fontWeight: 'medium' }}>Flags</Typography>
             <Grid container spacing={1} rowSpacing={0}>
-                <Grid item xs={6}><Tooltip title={helpText.flags.turnOffElec}><FormControlLabel control={ <Checkbox size="small" checked={configSettings.turnOffElec} onChange={handleTurnOffElecChange} /> } label="Turn Off Elec" /></Tooltip></Grid>
-                <Grid item xs={6}><Tooltip title={helpText.flags.combineSegments}><FormControlLabel control={ <Checkbox size="small" checked={configSettings.combineSegments} onChange={() => updateConfigSetting('combineSegments', !configSettings.combineSegments)} /> } label="Combine Segments" /></Tooltip></Grid>
-                <Grid item xs={6}><Tooltip title={helpText.flags.useGssa}><FormControlLabel control={ <Checkbox size="small" checked={configSettings.useGssa} onChange={() => updateConfigSetting('useGssa', !configSettings.useGssa)} /> } label="Use GSSA" /></Tooltip></Grid>
-                <Grid item xs={6}><Tooltip title={helpText.flags.reuseLibraryCell}><FormControlLabel control={ <Checkbox size="small" checked={configSettings.reuseLibraryCell} onChange={() => updateConfigSetting('reuseLibraryCell', !configSettings.reuseLibraryCell)} /> } label="Reuse Library Cell" /></Tooltip></Grid>
+                <Grid size={6}><Tooltip title={helpText.flags.turnOffElec}><FormControlLabel control={ <Checkbox size="small" checked={configSettings.turnOffElec} onChange={handleTurnOffElecChange} /> } label="Turn Off Elec" /></Tooltip></Grid>
+                <Grid size={6}><Tooltip title={helpText.flags.combineSegments}><FormControlLabel control={ <Checkbox size="small" checked={configSettings.combineSegments} onChange={() => { const v = !configSettings.combineSegments; updateConfigSetting('combineSegments', v); onConfigurationChange({ combineSegments: v }); }} /> } label="Combine Segments" /></Tooltip></Grid>
+                <Grid size={6}><Tooltip title={helpText.flags.useGssa}><FormControlLabel control={ <Checkbox size="small" checked={configSettings.useGssa} onChange={() => { const v = !configSettings.useGssa; updateConfigSetting('useGssa', v); onConfigurationChange({ useGssa: v }); }} /> } label="Use GSSA" /></Tooltip></Grid>
+                <Grid size={6}><Tooltip title={helpText.flags.reuseLibraryCell}><FormControlLabel control={ <Checkbox size="small" checked={configSettings.reuseLibraryCell} onChange={() => { const v = !configSettings.reuseLibraryCell; updateConfigSetting('reuseLibraryCell', v); onConfigurationChange({ stealCellFromLibrary: v }); }} /> } label="Reuse Library Cell" /></Tooltip></Grid>
             </Grid>
 
             <Typography variant="body2" gutterBottom sx={{ mt: 2, fontWeight: 'medium' }}>Other Settings</Typography>
             <Grid container spacing={1.5}>
-                <Grid item xs={12} sm={6}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
                         <TextField fullWidth size="small" label="Model Path" value={configSettings.modelPath} onChange={(e) => updateConfigSetting('modelPath', e.target.value)} />
                         <InfoTooltip title={helpText.otherSettings.modelPath} />
@@ -266,13 +390,13 @@ const RunMenuBox = ({
                         <InfoTooltip title={helpText.otherSettings.odeMethod} />
                     </Box>
                 </Grid>
-                <Grid item xs={12} sm={6}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
                         <TextField fullWidth size="small" label="Rand Seed" type="number" value={configSettings.randSeed} onChange={(e) => updateConfigSetting('randSeed', e.target.value)} />
                         <InfoTooltip title={helpText.otherSettings.randSeed} />
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <TextField fullWidth size="small" label="Temperature (°C)" type="text" value={configSettings.temperature} onChange={(e) => updateConfigSetting('temperature', e.target.value)} />
+                        <TextField fullWidth size="small" label="Temperature (°C)" type="text" value={configSettings.temperature} onChange={(e) => updateConfigSetting('temperature', e.target.value)} helperText={tempWarn || undefined} FormHelperTextProps={tempWarn ? { sx: { color: 'warning.main' } } : undefined} />
                         <InfoTooltip title={helpText.otherSettings.temperature} />
                     </Box>
                 </Grid>

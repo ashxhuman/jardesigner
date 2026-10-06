@@ -5,4 +5,4 @@ Converts the directory into a package so imports like
 and avoids conflicts with any top-level modules named `neuromorpho`.
 """
 
-__all__ = ["neuromorpho", "neuromorpho_routes", "storage"]
+__all__ = ["neuromorpho", "neuromorpho_routes"]

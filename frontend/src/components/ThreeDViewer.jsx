@@ -1,7 +1,9 @@
 import React, { useRef, useEffect, useMemo, useState, memo, useContext } from 'react';
+import { alpha } from '@mui/material/styles';
 import {
     Box, Button, Typography, TextField, FormControlLabel, Checkbox, Slider,
-    Tooltip, Drawer, IconButton, Divider, Radio, RadioGroup, FormControl, FormLabel
+    Tooltip, Drawer, IconButton, Divider, Radio, RadioGroup, FormControl, FormLabel,
+    useTheme,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
@@ -20,7 +22,8 @@ const ColorBar = ({
     currentRange,
     readoutTitle,
     activeDrawableId,
-    handleColorRangeChange
+    handleColorRangeChange,
+    isDark,
 }) => {
     // ... (ColorBar component remains unchanged) ...
     const gradient = useMemo(() => {
@@ -44,8 +47,6 @@ const ColorBar = ({
     const handleWheel = (e) => {
         e.preventDefault(); // Prevent the page from scrolling
         if (!activeDrawableId || !handleColorRangeChange) return;
-
-        e.preventDefault(); // Prevent the page from scrolling
         const rect = e.currentTarget.getBoundingClientRect();
         const yPercent = (e.clientY - rect.top) / rect.height;
         const scrollUp = e.deltaY < 0; // true for scroll up/forwards
@@ -99,8 +100,9 @@ const ColorBar = ({
     return (
         <Box
             sx={{
-                position: 'absolute', left: '16px', top: '16px', display: 'flex', flexDirection: 'column',
-                gap: 1, color: 'black', textShadow: '0 0 2px white',
+                position: 'absolute', left: '16px', top: '62px', display: 'flex', flexDirection: 'column',
+                gap: 1, color: isDark ? 'rgba(255,255,255,0.9)' : 'black',
+                textShadow: isDark ? '0 0 4px rgba(0,0,0,0.8)' : '0 0 2px white',
                 pointerEvents: 'auto', // Enable pointer events for the wheel
                 cursor: 'ns-resize', // Indicate vertical resizing
             }}
@@ -110,7 +112,7 @@ const ColorBar = ({
                 onWheel={handleWheel} // Add the wheel event listener here
                 sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
             >
-                <Box sx={{ width: '20px', height: '150px', background: gradient, border: '1px solid black', borderRadius: '4px' }} />
+                <Box sx={{ width: '20px', height: '150px', background: gradient, border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.12)'}`, borderRadius: '4px' }} />
                 <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '150px' }}>
                     <Typography variant="caption">{formatColorBarLabel(vmax)}</Typography>
                     <Typography variant="caption">{formatColorBarLabel(vmin)}</Typography>
@@ -127,10 +129,15 @@ const ThreeDViewer = (props) => {
     isReplaying, onStartReplay, onPauseReplay, onSeekReplay, replayInterval, setReplayInterval, totalRuntime,
     explodeAxis, onExplodeAxisToggle, onSceneBuilt,
     defaultDiaScale,
-    clickSelected
+    clickSelected,
+    modelDirty,
+    handleRebuildModel,
   } = props;
 
   const { replayTime } = useContext(ReplayContext);
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  const canvasBg = isDark ? '#000000' : '#FFFFFF';
 
   const mountRef = useRef(null);
   const managerRef = useRef(null);
@@ -139,10 +146,11 @@ const ThreeDViewer = (props) => {
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [activeDrawableId, setActiveDrawableId] = useState(null);
   
-  const [rotationSpeedState, setRotationSpeedState] = useState(0); 
+  const [rotationSpeedState, setRotationSpeedState] = useState(0);
   const [isReflective, setIsReflective] = useState(false);
   const [verticalAxis, setVerticalAxis] = useState('y'); // 'y', 'z', or 'x'
   const [isWorldFlipped, setIsWorldFlipped] = useState(false);
+  const [showAllMoogliIcons, setShowAllMoogliIcons] = useState(false);
   
   // --- NEW: Ref to track previous simulation state ---
   const prevIsSimulatingRef = useRef();
@@ -159,6 +167,7 @@ const ThreeDViewer = (props) => {
   useEffect(() => {
     if (mountRef.current) {
         managerRef.current = new ThreeDManager(mountRef.current, onSelectionChange, defaultDiaScale);
+        managerRef.current.setThemeMode(isDark);
         if (onManagerReady) onManagerReady(managerRef.current);
     }
     return () => {
@@ -166,6 +175,22 @@ const ThreeDViewer = (props) => {
         if (onManagerReady) onManagerReady(null);
     };
   }, [onSelectionChange, onManagerReady, defaultDiaScale]);
+
+  useEffect(() => {
+    managerRef.current?.setThemeMode(isDark);
+  }, [isDark]);
+
+  // The backend's MooView always sends bg: 'white' as its hardcoded default
+  // (jarmoogli.py) — it's never a real user choice for this viewer, so treat
+  // it the same as 'default' and let the theme decide instead of forcing white.
+  const resolvedBgColor = useMemo(() => {
+    const bg = threeDConfig?.bg;
+    return (!bg || bg === 'default' || bg === 'white') ? canvasBg : bg;
+  }, [threeDConfig?.bg, canvasBg]);
+
+  useEffect(() => {
+    managerRef.current?.setBgColor(resolvedBgColor);
+  }, [resolvedBgColor]);
 
   useEffect(() => {
     if (managerRef.current && threeDConfig) {
@@ -191,6 +216,7 @@ const ThreeDViewer = (props) => {
       setVerticalAxis('y');
       setIsReflective(false);
       setRotationSpeedState(0);
+      setShowAllMoogliIcons(false);
     }
   }, [threeDConfig, setDrawableVisibility, onSceneBuilt]);
 
@@ -210,31 +236,35 @@ const ThreeDViewer = (props) => {
           managerRef.current.setActiveGroupId(activeDrawableId);
       }
   }, [drawableVisibility, activeDrawableId]);
-  
+
+  useEffect(() => {
+      if (managerRef.current) {
+          managerRef.current.setShowAllMoogliIcons(showAllMoogliIcons);
+      }
+  }, [showAllMoogliIcons]);
+
   // --- NEW: Auto-autoscale on sim complete ---
   useEffect(() => {
     const prevIsSimulating = prevIsSimulatingRef.current;
-  
+
     // Check for simulation run completion (true -> false)
     if (prevIsSimulating && !isSimulating && simulationFrames.length > 0) {
-      
       const newRangesMap = new Map();
       const visibleDrawables = drawables.filter(d => drawableVisibility[d.groupId]);
-  
+
       visibleDrawables.forEach(drawable => {
         const targetGroupId = drawable.groupId;
         let globalMin = Infinity;
         let globalMax = -Infinity;
-  
+
         simulationFrames.forEach(frame => {
-          if (frame.groupId === targetGroupId) {
-            frame.data.forEach(value => {
-              if (value < globalMin) globalMin = value;
-              if (value > globalMax) globalMax = value;
-            });
+          if (frame.groupId !== targetGroupId) return;
+          if (frame.f32_min !== undefined) {
+            if (frame.f32_min < globalMin) globalMin = frame.f32_min;
+            if (frame.f32_max > globalMax) globalMax = frame.f32_max;
           }
         });
-  
+
         if (isFinite(globalMin) && isFinite(globalMax)) {
           newRangesMap.set(targetGroupId, {
             vmin: globalMin.toExponential(2),
@@ -242,7 +272,6 @@ const ThreeDViewer = (props) => {
           });
         }
       });
-
       setColorRanges(prevColorRanges => {
         const updatedRanges = { ...prevColorRanges };
         newRangesMap.forEach((range, groupId) => {
@@ -251,7 +280,7 @@ const ThreeDViewer = (props) => {
         return updatedRanges;
       });
     }
-  
+
     // Store the current value for the next render
     prevIsSimulatingRef.current = isSimulating;
   }, [isSimulating, simulationFrames, drawables, drawableVisibility, setColorRanges]);
@@ -263,10 +292,11 @@ const ThreeDViewer = (props) => {
       const targetGroupId = activeDrawable.groupId;
       let globalMin = Infinity; let globalMax = -Infinity;
       simulationFrames.forEach(frame => {
-          if (frame.groupId === targetGroupId) frame.data.forEach(value => {
-              if (value < globalMin) globalMin = value;
-              if (value > globalMax) globalMax = value;
-          });
+          if (frame.groupId !== targetGroupId) return;
+          if (frame.f32_min !== undefined) {
+              if (frame.f32_min < globalMin) globalMin = frame.f32_min;
+              if (frame.f32_max > globalMax) globalMax = frame.f32_max;
+          }
       });
       if (isFinite(globalMin) && isFinite(globalMax)) {
            setColorRanges(prev => ({ ...prev, [targetGroupId]: { vmin: globalMin.toExponential(2), vmax: globalMax.toExponential(2) } }));
@@ -332,21 +362,28 @@ Aa: Auto-position`;
   };
 
   return (
-    <Box sx={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}>
-        {/* Main Control Bar (Always Visible) */}
-        <Box sx={{ p: 1, borderBottom: '1px solid #ccc', background: '#f5f5ff5', flexShrink: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+    <Box sx={{ height: '100%', width: '100%', position: 'relative', overflow: 'hidden' }}>
+        {/* Main Control Bar — glassmorphism overlay floating above the canvas */}
+        <Box sx={(theme) => ({
+            position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+            p: 1, display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: 1,
+            bgcolor: alpha(theme.palette.background.paper, 0.88),
+            borderBottom: `1px solid ${theme.palette.divider}`,
+            boxShadow: theme.shadows[2],
+            color: 'text.primary',
+        })}>
             {/* ... (Replay/Setup controls) ... */}
             {showReplayControls && (
                 <>
                     <Button
-                        variant="outlined" size="small" onClick={isReplaying ? onPauseReplay : onStartReplay}
+                        variant="contained" color='primary' size="small" onClick={isReplaying ? onPauseReplay : onStartReplay}
                         startIcon={isReplaying ? <PauseIcon /> : <PlayArrowIcon />}
-                        sx={{ width: '140px', justifyContent: 'flex-start' }}
+                        sx={{ width: '100px', height: '36px', justifyContent: 'flex-start' }}
                     >
                         {isReplaying ? "Pause" : "Replay"}
                     </Button>
                     <TextField size="small" label="Time (s)" value={replayTime.toFixed(4)} InputProps={{ readOnly: true }} sx={{ width: '120px' }}/>
-                    <Box sx={{ width: '280px', display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Box sx={{ flex: '1 1 180px', minWidth: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Typography variant="caption">0</Typography>
                         <Slider min={0} max={totalRuntime} step={Math.max(totalRuntime/1000, 1e-6)} value={Math.min(replayTime, totalRuntime)} onChangeCommitted={(e, v)=> onSeekReplay(v)} aria-label="progress slider"
                             sx={{ '& .MuiSlider-thumb': { transition: 'none' }, '& .MuiSlider-track': { transition: 'none' } }}
@@ -355,7 +392,7 @@ Aa: Auto-position`;
                     </Box>
                     <TextField
                         label="Selected Path" size="small" variant="outlined" value={displayedSimPath}
-                        InputProps={{ readOnly: true }} sx={{ minWidth: '20ch' }}
+                        InputProps={{ readOnly: true }} sx={{ width: '16ch', flexShrink: 1 }}
                     />
                 </>
             )}
@@ -368,7 +405,6 @@ Aa: Auto-position`;
 
             {/* Spacer and Settings Icon */}
             <Box sx={{ flexGrow: 1 }} />
-
             {/* ... (Icon Buttons) ... */}
             <Tooltip title={getRotationTooltip()}>
                 <IconButton onClick={handleToggleAutoRotate} color={rotationSpeedState > 0 ? 'primary' : 'default'}>
@@ -412,6 +448,10 @@ Aa: Auto-position`;
                                 label={<Typography variant="body2">{d.title || d.groupId}</Typography>}
                             />
                         ))}
+                        <FormControlLabel
+                            control={<Checkbox checked={showAllMoogliIcons} onChange={(e) => setShowAllMoogliIcons(e.target.checked)} size="small" />}
+                            label={<Typography variant="body2">Show 3D indicators on all compartments</Typography>}
+                        />
                     </Box>
                 )}
                 <Divider />
@@ -432,8 +472,8 @@ Aa: Auto-position`;
                         </RadioGroup>
                     </FormControl>
                     <Button variant="outlined" size="small" onClick={handleAutoscale} disabled={!activeDrawable}>Autoscale</Button>
-                    <TextField label="Vmin" size="small" variant="outlined" value={activeColorRange.vmin} onChange={(e) => handleColorRangeChange('vmin', e.target.value)} disabled={!activeDrawable} />
-                    <TextField label="Vmax" size="small" variant="outlined" value={activeColorRange.vmax} onChange={(e) => handleColorRangeChange('vmax', e.target.value)} disabled={!activeDrawable} />
+                    <TextField label="Minimum Value" size="small" variant="outlined" value={activeColorRange.vmin} onChange={(e) => handleColorRangeChange('vmin', e.target.value)} disabled={!activeDrawable} />
+                    <TextField label="Maximum Value" size="small" variant="outlined" value={activeColorRange.vmax} onChange={(e) => handleColorRangeChange('vmax', e.target.value)} disabled={!activeDrawable} />
                 </Box>
                 <Divider />
 
@@ -452,7 +492,7 @@ Aa: Auto-position`;
                     <Tooltip title="Playback Speed (Slower -> Faster)">
                         <Slider value={replayInterval} onChange={(e, newValue) => setReplayInterval(newValue)} aria-labelledby="replay-speed-slider" valueLabelDisplay="off" min={5} max={500} step={5} inverted />
                     </Tooltip>
-                    <Box sx={{ minWidth: '55px', textAlign: 'center', border: '1px solid #ccc', borderRadius: '4px', p: '4px' }}>
+                    <Box sx={{ minWidth: '55px', textAlign: 'center', border: '1px solid', borderColor: 'divider', borderRadius: '4px', p: '4px' }}>
                         <Typography variant="caption">{replayInterval}ms</Typography>
                     </Box>
                 </Box>
@@ -467,9 +507,9 @@ Aa: Auto-position`;
             </Box>
         </Drawer>
 
-        {/* 3D Viewer Area */}
-        <Box sx={{ position: 'relative', flexGrow: 1 }}>
-            <Box ref={mountRef} sx={{ height: '100%', width: '100%', background: '#FFFFFF' }} />
+        {/* 3D Viewer Area — fills the full container; control bar floats over top */}
+        <Box sx={{ position: 'absolute', inset: 0 }}>
+            <Box ref={mountRef} sx={{ height: '100%', width: '100%', background: canvasBg, transition: 'background 0.4s ease' }} />
             {((isSimulating || simulationFrames.length > 0) && activeDrawable) && (
                 <ColorBar
                     displayConfig={displayConfig}
@@ -479,6 +519,7 @@ Aa: Auto-position`;
                     // --- PASS NEW PROPS ---
                     activeDrawableId={activeDrawableId}
                     handleColorRangeChange={handleColorRangeChange}
+                    isDark={isDark}
                 />
             )}
         </Box>

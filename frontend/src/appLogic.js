@@ -43,7 +43,8 @@ const initialJsonData = {
   moogli: [],
   displayMoogli: {},
   moogliEvents: [],
-  stims: []
+  stims: [],
+  docFile: ''
 };
 
 const requiredKeys = ["filetype", "version"];
@@ -101,6 +102,8 @@ export const useAppLogic = () => {
     const sessionTokenRef = useRef('');
 
     const [activeSim, setActiveSim] = useState({ pid: null, data_channel_id: null, plot_filename: null });
+    const [modelDirty, setModelDirty] = useState(false);
+    const activeMenuFlushRef = useRef(null);
     const socketRef = useRef(null);
     const frameQueueRef = useRef([]);
     const animationFrameId = useRef();
@@ -211,9 +214,12 @@ export const useAppLogic = () => {
 
     useEffect(() => {
         const processQueue = () => {
-            if (frameQueueRef.current.length > 0 && threeDManagerRefs.current[VIEW_IDS.RUN]) {
-                const frame = frameQueueRef.current.shift();
-                threeDManagerRefs.current[VIEW_IDS.RUN].updateSceneData(frame);
+            const manager = threeDManagerRefs.current[VIEW_IDS.RUN];
+            if (manager && frameQueueRef.current.length > 0) {
+                const deadline = performance.now() + 8;
+                while (frameQueueRef.current.length > 0 && performance.now() < deadline) {
+                    manager.updateSceneData(frameQueueRef.current.shift());
+                }
             }
             animationFrameId.current = requestAnimationFrame(processQueue);
         };
@@ -352,10 +358,11 @@ export const useAppLogic = () => {
                 socketRef.current.emit('join_sim_channel', { data_channel_id: newDataChannelId });
             }
 
-            const payload = { 
-                config_data: newJsonData, 
+            const payload = {
+                config_data: newJsonData,
                 client_id: clientId,
-                data_channel_id: newDataChannelId 
+                data_channel_id: newDataChannelId,
+                skip_missing_files_check: warnedAboutMissingRef.current
             };
 
             const response = await fetch(`${API_BASE_URL}/launch_simulation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -389,12 +396,40 @@ export const useAppLogic = () => {
     
     const lastBuiltJsonDataRef = useRef(null);
     const pendingStartRuntimeRef = useRef(null);
+    const warnedAboutMissingRef = useRef(false);
+    const setWarnedAboutMissing = useCallback((val) => { warnedAboutMissingRef.current = val; }, []);
     const updateJsonData = useCallback((newDataPart) => {
         const updatedData = { ...initialJsonData, ...jsonData, ...newDataPart };
         const compactedData = compactJsonData(updatedData, initialJsonData);
         setJsonData(updatedData);
         setJsonContent(JSON.stringify(compactedData, null, 2));
-        if (!isEqual(compactedData, lastBuiltJsonDataRef.current)) { buildModelOnServer(compactedData); }
+        if (!isEqual(compactedData, lastBuiltJsonDataRef.current)) {
+            const prev = lastBuiltJsonDataRef.current;
+            const isFileSourceChange =
+                (newDataPart.cellProto?.type === 'file' &&
+                 newDataPart.cellProto.source !== prev?.cellProto?.source) ||
+                (Array.isArray(newDataPart.chemProto) && newDataPart.chemProto.some((p, i) =>
+                    p.source && p.source !== prev?.chemProto?.[i]?.source)) ||
+                (Array.isArray(newDataPart.chanProto) && newDataPart.chanProto.some((p, i) =>
+                    p.type === 'neuroml' && p.source !== prev?.chanProto?.[i]?.source));
+            if (isFileSourceChange) {
+                setModelDirty(false);
+                buildModelOnServer(compactedData);
+            } else {
+                setModelDirty(true);
+            }
+        }
+    }, [jsonData, buildModelOnServer]);
+
+    const handleRebuildModel = useCallback(() => {
+        let flushedPart = null;
+        if (activeMenuFlushRef.current) {
+            flushedPart = activeMenuFlushRef.current();
+        }
+        const sourceData = flushedPart ? { ...initialJsonData, ...jsonData, ...flushedPart } : jsonData;
+        const compactedData = compactJsonData(sourceData, initialJsonData);
+        setModelDirty(false);
+        buildModelOnServer(compactedData);
     }, [jsonData, buildModelOnServer]);
     
     const setRunParameters = useCallback((runParams) => {
@@ -441,21 +476,17 @@ export const useAppLogic = () => {
     const handleBuildAndStartRun = useCallback((runConfig) => {
         const latestData = { ...initialJsonData, ...jsonData, ...runConfig };
         const compactedData = compactJsonData(latestData, initialJsonData);
-        // Exclude runtime from rebuild decision: it is passed at run time to moose.start()
-        // and does not affect the MOOSE model structure.
-        const withoutRuntime = ({ runtime: _r, ...rest }) => rest;
-        const structurallyUnchanged = activeSim.pid &&
-            isEqual(withoutRuntime(compactedData), withoutRuntime(lastBuiltJsonDataRef.current ?? {}));
-        if (structurallyUnchanged) {
+        if (!modelDirty && activeSim.pid) {
             setRunParameters(runConfig);
             handleStartRun(runConfig.runtime);
         } else {
             pendingStartRuntimeRef.current = runConfig.runtime;
             setJsonData(latestData);
             setJsonContent(JSON.stringify(compactedData, null, 2));
+            setModelDirty(false);
             buildModelOnServer(compactedData);
         }
-    }, [jsonData, activeSim.pid, handleStartRun, setRunParameters, buildModelOnServer]);
+    }, [jsonData, modelDirty, activeSim.pid, handleStartRun, setRunParameters, buildModelOnServer]);
 
     const handleStopRun = useCallback(() => {
         if (!activeSim.pid || !socketRef.current?.connected) return;
@@ -477,18 +508,22 @@ export const useAppLogic = () => {
     }, []);
     
     const updateJsonString = useCallback((newJsonString) => {
-        setJsonContent(newJsonString);
         try {
             const parsedData = JSON.parse(newJsonString);
             const mergedData = { ...initialJsonData, ...parsedData };
-            updateJsonData(mergedData);
+            const compactedData = compactJsonData(mergedData, initialJsonData);
+            setJsonData(mergedData);
+            setJsonContent(JSON.stringify(compactedData, null, 2));
+            setModelDirty(false);
+            buildModelOnServer(compactedData);
         } catch (e) { alert(`Failed to load model: ${e.message}`); }
-    }, [updateJsonData]);
+    }, [buildModelOnServer]);
 
     const handleClearModel = useCallback(() => {
         const compacted = compactJsonData(initialJsonData, initialJsonData);
         setJsonData(initialJsonData);
         setJsonContent(JSON.stringify(compacted, null, 2));
+        setModelDirty(false);
         buildModelOnServer(compacted);
     }, [buildModelOnServer]);
 
@@ -496,19 +531,44 @@ export const useAppLogic = () => {
     const getChemProtos = useCallback(() => jsonData?.chemProto?.map(p => p?.name).filter(Boolean) || [], [jsonData?.chemProto]);
     const toggleMenu = (menu) => setActiveMenu(prev => (prev === menu ? null : menu));
 
+    const handleLoadTutorial = useCallback(async (name) => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/load_example/${clientId}/${encodeURIComponent(name)}`, { method: 'POST' });
+            if (!response.ok) throw new Error(await response.text());
+            const data = await response.json();
+            if (data.json) {
+                updateJsonString(data.json);
+            }
+        } catch (err) {
+            console.error('Error loading tutorial:', err);
+        }
+    }, [clientId, updateJsonString]);
+
+    // Auto-load tutorial specified in URL query param (?tutorial=name).
+    // Fires once on mount; cleans the URL so the browser back button doesn't re-trigger it.
+    useEffect(() => {
+        const tutorialName = new URLSearchParams(window.location.search).get('tutorial');
+        if (tutorialName) {
+            window.history.replaceState({}, '', window.location.pathname);
+            handleLoadTutorial(tutorialName);
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
     const baseProps = {
         activeMenu, toggleMenu, jsonData, jsonContent,
         plotDataUrl, isPlotReady, plotError, isSimulating, activeSim, clientId,
         updateJsonData, setRunParameters, handleStartRun, handleResetRun,
         handleBuildAndStartRun, handleStopRun, updateJsonString,
-        handleClearModel, getCurrentJsonData, getChemProtos, setActiveMenu, handleMorphologyFileChange,
+        handleClearModel, getCurrentJsonData, getChemProtos, setActiveMenu, handleMorphologyFileChange, setWarnedAboutMissing,
         replayTime, totalRuntime, isReplaying, replayInterval,
-        setReplayInterval, liveFrameData,
-        onStartReplay: handleStartReplay, onPauseReplay: handlePauseReplay,
+		setReplayInterval, liveFrameData,
+		onStartReplay: handleStartReplay, onPauseReplay: handlePauseReplay,
         onRewindReplay: handleRewindReplay, onSeekReplay: handleSeekReplay,
         handleStartReplay, handlePauseReplay, handleRewindReplay, handleSeekReplay,
         simError, setSimError,
-        elecPaths, spinePaths
+        elecPaths, spinePaths,
+        handleLoadTutorial,
+        modelDirty, handleRebuildModel, activeMenuFlushRef
     };
 
     if (isStandalone) {

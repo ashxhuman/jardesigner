@@ -3,6 +3,7 @@
 # This program is licensed under the GNU Public License version 3.
 
 from pathlib import Path
+import base64
 import numpy as np
 import moose
 import re
@@ -416,66 +417,73 @@ class DataWrapper:
             "shape": [ ss.toDict() for ss in self.segmentList ]
         }
 
-    def getDataFrame( self, timestamp ):
-        raise NotImplementedError
-
-class MooseNeuronDataWrapper( DataWrapper ):
-    def __init__( self, compts, fdict, groupId ): 
-        fdict['transparency'] = fdict.get('transparency', 0.5)
-        super().__init__(fdict, groupId )
-        #self.neuronId_ = neuronId
-        self.dummyObj = None
-        if self.field == "Ca":
-            self.dummyObj = moose.CaConc( "/dummyCa" )
-        elif self.field in ["Ik","Gk", "Ek", "Gbar", "modulation"]:
-            self.dummyObj = moose.SynChan( "/dummySynChan" )
-
-        # === RESTORED: Logic to handle both Compartment and IntFire types ===
-        #compts = moose.wildcardFind( neuronId.path + "/#[ISA=CompartmentBase]" )
-        # Need a cleaner check for IntFires.
-        if len(compts) > 0:
-            self.segmentList = [ Segment.simpleCompt( cc, idx ) for idx, cc in enumerate( compts ) ]
-        else:
-            #compts = moose.wildcardFind( neuronId.path + "/#[ISA=IntFire]" )
-            if len(compts) > 0:
-                # For IntFire, we need to fetch coordinates separately.
-                coords_vec = moose.vec( compts[0].path + "/coords" )
-                coords_list = [coords_vec[i] for i in range(len(coords_vec))]
-                self.segmentList = [ Segment.intFireCompt(cc, cd, idx) for idx, (cc, cd) in enumerate(zip(compts, coords_list)) ]
-            else:
-                print("Error: MooseNeuronDataWrapper found neither CompartmentBase nor IntFire objects.")
-        
-        if self.relObjPath_ == ".":
-            self.objList_ = compts
-        else:
-            self.objList_ = []
-            for i in compts:
-                path_to_check = i.path + '/' + self.relObjPath_
-                if moose.exists( path_to_check ):
-                    self.objList_.append(moose.element(path_to_check))
-                elif self.dummyObj:
-                    self.objList_.append(self.dummyObj)
-
-    def getDataFrame( self, timestamp ):
+    def _get_values( self ):
         fs = self.fieldScale_
-        values = [fs*float(moose.getField(i, self.field)) for i in self.objList_]
+        return np.array( [fs * float( moose.getField( i, self.field ) ) for i in self.objList_], dtype=np.float32 )
+
+    def getDataFrame( self, timestamp ):
+        values = self._get_values()
+        f32 = values.astype( np.float32 )
         return {
             "filetype": "jardesignerDataFrame",
             "version": "1.0",
             "viewId": "run",
-            "timestamp": float(timestamp),
+            "timestamp": float( timestamp ),
             "groupId": self.groupId,
-            "data": values
+            "data_f32": base64.b64encode( f32.tobytes() ).decode( 'ascii' ),
+            "count": len( f32 ),
+            "f32_min": float( f32.min() ) if len( f32 ) else 0.0,
+            "f32_max": float( f32.max() ) if len( f32 ) else 0.0,
         }
+
+
+class CompartmentDataWrapper( DataWrapper ):
+    """Fields that live directly on CompartmentBase objects (Vm, Im, inject, …).
+    Geometry and data value come from the same object."""
+    def __init__( self, comptList, fdict, groupId ):
+        fdict['transparency'] = fdict.get( 'transparency', 0.5 )
+        super().__init__( fdict, groupId )
+        self.objList_ = list( comptList )
+        self.segmentList = [ Segment.simpleCompt( cc, idx ) for idx, cc in enumerate( comptList ) ]
+
+
+class ChildComptDataWrapper( DataWrapper ):
+    """Fields on child objects of compartments (HHChannel → Ik/Gk, CaConc → Ca, …).
+    childList contains the child objects (already filtered by _collapseElistToPathAndClass).
+    Geometry comes from each child's parent CompartmentBase; value is read from the child.
+    segmentList and objList_ are built in lockstep so their indices always correspond."""
+    def __init__( self, childList, fdict, groupId ):
+        fdict['transparency'] = fdict.get( 'transparency', 0.5 )
+        super().__init__( fdict, groupId )
+        self.objList_ = list( childList )
+        for idx, child in enumerate( childList ):
+            compt = child.parent
+            self.segmentList.append( Segment.simpleCompt( compt, idx ) )
+
+
+class IntFireDataWrapper( DataWrapper ):
+    """IntFire neurons: geometry comes from an attached /coords child element;
+    value is read from the IntFire object itself."""
+    def __init__( self, intfireList, fdict, groupId ):
+        fdict['transparency'] = fdict.get( 'transparency', 0.5 )
+        super().__init__( fdict, groupId )
+        self.objList_ = list( intfireList )
+        if len( intfireList ) > 0:
+            coords_vec = moose.vec( intfireList[0].path + "/coords" )
+            coords_list = [ coords_vec[i] for i in range( len( coords_vec ) ) ]
+            self.segmentList = [
+                Segment.intFireCompt( cc, cd, idx )
+                for idx, (cc, cd) in enumerate( zip( intfireList, coords_list ) )
+            ]
+
 
 class MooseChemDataWrapper( DataWrapper ):
     def __init__( self, objList, fdict, groupId ):
-        fdict['transparency'] = fdict.get('transparency', 0.8)
-        super().__init__(fdict, groupId )
+        fdict['transparency'] = fdict.get( 'transparency', 0.8 )
+        super().__init__( fdict, groupId )
         self.objList_ = objList
         if not objList:
             return
-        
         meshType = objList[0].parent.className
         if meshType in ["NeuroMesh", "CylMesh"]:
             self.segmentList = [ Segment.cylChemCompt( cc, idx ) for idx, cc in enumerate( objList ) ]
@@ -488,16 +496,9 @@ class MooseChemDataWrapper( DataWrapper ):
         elif meshType == "EndoMesh":
             self.segmentList = [ Segment.endoChemCompt( cc, idx ) for idx, cc in enumerate( objList ) ]
 
-    def getDataFrame( self, timestamp ):
-        values = [float(moose.getField(i, self.field)) for i in self.objList_]
-        return {
-            "filetype": "jardesignerDataFrame",
-            "version": "1.0",
-            "viewId": "run",
-            "timestamp": float(timestamp),
-            "groupId": self.groupId,
-            "data": values
-        }
+    def _get_values( self ):
+        # Chemical fields are already in display units; no fieldScale_ applied.
+        return np.array( [float( moose.getField( i, self.field ) ) for i in self.objList_], dtype=np.float32 )
 
 class MooseTrodeDataWrapper( DataWrapper ):
     def __init__( self, objList, fdict, groupId ):
@@ -538,12 +539,16 @@ class MooseTrodeDataWrapper( DataWrapper ):
         '''
 
     def getDataFrame( self, timestamp ): # Dummy function, returns zeros.
+        n = len(self.objList_)
         return {
             "filetype": "jardesignerDataFrame",
             "version": "1.0",
             "timestamp": float(timestamp),
             "groupId": self.groupId,
-            "data": [0]* len( self.objList_ )
+            "data_f32": base64.b64encode(np.zeros(n, dtype=np.float32).tobytes()).decode('ascii'),
+            "count": n,
+            "f32_min": 0.0,
+            "f32_max": 0.0,
         }
 
 class MooView:
@@ -590,16 +595,20 @@ class MooView:
             self._pendingFrames.append( payload )
 
 
-    def makeMoogli(self, mooObj, fdict, groupId ):
-        mooField = fdict.get('field', 'Vm')
-        #print( f"IN MAKE MOOGLI, moofield = {mooObj[0].path}.{mooField}" )
-        if mooField in ['n', 'conc']: # mooObj is the wildcard list
-            dw = MooseChemDataWrapper(mooObj, fdict, groupId)
-        elif mooField == 'other': # mooObj is objList
-            dw = MooseTrodeDataWrapper(mooObj, fdict, groupId)
+    def makeMoogli( self, mooObj, fdict, groupId ):
+        mooField = fdict.get( 'field', 'Vm' )
+        if mooField in ['n', 'conc']:
+            dw = MooseChemDataWrapper( mooObj, fdict, groupId )
+        elif mooField == 'other':
+            dw = MooseTrodeDataWrapper( mooObj, fdict, groupId )
+        elif len( mooObj ) > 0 and mooObj[0].isA["IntFire"]:
+            dw = IntFireDataWrapper( mooObj, fdict, groupId )
+        elif fdict.get( 'relpath', '.' ) not in ( '.', '' ):
+            # Parent compartments passed in; child looked up by relpath inside wrapper.
+            dw = ChildComptDataWrapper( mooObj, fdict, groupId )
         else:
-            dw = MooseNeuronDataWrapper(mooObj, fdict, groupId)
-        self.drawables.append(dw)
+            dw = CompartmentDataWrapper( mooObj, fdict, groupId )
+        self.drawables.append( dw )
 
     def updateMoogliViewer( self, idx ):
         if idx >= len(self.drawables):
@@ -657,7 +666,6 @@ class MooView:
                                             "message": "Simulation has finished."}},
                           headers={'X-Internal-Token': _INTERNAL_TOKEN},
                           timeout=2.0)
-            print("Sent simulation end notification.")
         except Exception as e:
             print(f"Warning: Could not send simulation end notification. {e}")
 

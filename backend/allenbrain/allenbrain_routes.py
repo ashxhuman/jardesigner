@@ -3,30 +3,20 @@
 # CORS handled globally in server.py.
 ##############################################
 import traceback
+from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
 from .allenbrain import (
-    fetch_filter_options,
     fetch_species_options,
     search_neurons,
     fetch_swc_for_specimen,
     fetch_morph_thumb,
-    fetch_section_image,
-    fetch_section_svg,
 )
 
 allenbrain_routes = Blueprint("allenbrain", __name__)
 
-
-@allenbrain_routes.route("/filters", methods=["GET"])
-def get_filters():
-    """GET /allenbrain/filters — global options: species + morphology annotation fields."""
-    try:
-        return jsonify(fetch_filter_options())
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+USER_UPLOADS_DIR = Path(__file__).resolve().parent.parent / "user_uploads"
 
 
 @allenbrain_routes.route("/metadata", methods=["GET"])
@@ -49,10 +39,9 @@ def get_species_filters():
 def search():
     """
     POST /allenbrain/search
-    Body: { species?, sex?, disease_state?, brain_area_acronym?,
-            brain_area_parent_acronym?, layer?, hemisphere?,
-            dendrite_type?, apical?, reconstruction_type?,
-            reporter_status?, line_name?, page?, size? }
+    Body: { species?, brain_area_acronym?, brain_area_parent_acronym?,
+            layer?, dendrite_type?, apical?, reconstruction_type?,
+            line_name?, page?, size? }
     """
     body = request.get_json(force=True, silent=True) or {}
     try:
@@ -93,26 +82,9 @@ def search():
     })
 
 
-@allenbrain_routes.route("/swc/<int:specimen_id>", methods=["GET"])
-def get_swc(specimen_id: int):
-    """GET /allenbrain/swc/<specimen_id> — proxy SWC morphology download."""
-    try:
-        swc_text, filename = fetch_swc_for_specimen(specimen_id)
-        return swc_text, 200, {
-            "Content-Type": "text/plain",
-            "Content-Disposition": f'attachment; filename="{filename}"',
-        }
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-
 @allenbrain_routes.route("/thumb/<int:file_id>", methods=["GET"])
 def get_thumb(file_id: int):
-    """
-    GET /allenbrain/thumb/<file_id>
-    Proxies the morphology thumbnail from morph_thumb_path (well_known_file_download).
-    """
+    """GET /allenbrain/thumb/<file_id> — proxy morphology thumbnail."""
     try:
         img_bytes, content_type = fetch_morph_thumb(file_id)
         return img_bytes, 200, {"Content-Type": content_type}
@@ -121,33 +93,14 @@ def get_thumb(file_id: int):
         return jsonify({"error": str(e)}), 500
 
 
-@allenbrain_routes.route("/preview/<int:specimen_id>", methods=["GET"])
-def get_preview(specimen_id: int):
-    """
-    GET /allenbrain/preview/<specimen_id>
-    Proxies a section/projection JPEG via section_image_download API.
-    """
-    try:
-        img_bytes, content_type = fetch_section_image(specimen_id)
-        return img_bytes, 200, {"Content-Type": content_type}
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 404
-
-
-@allenbrain_routes.route("/svg/<int:specimen_id>", methods=["GET"])
-def get_svg(specimen_id: int):
-    """
-    GET /allenbrain/svg/<specimen_id>
-    Proxies a vector SVG of the section image via svg_download API.
-    Higher quality than /preview (vector, scalable).
-    """
-    try:
-        svg_bytes, content_type = fetch_section_svg(specimen_id)
-        return svg_bytes, 200, {"Content-Type": content_type}
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 404
+def stage_specimen(specimen_id: int, client_id: str) -> dict:
+    """Download SWC for specimen_id and save to the user's session directory.
+    Returns {"filename": "<name>.swc"}. Raises on failure."""
+    swc_text, filename = fetch_swc_for_specimen(specimen_id)
+    dest_dir = USER_UPLOADS_DIR / client_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    (dest_dir / filename).write_text(swc_text, encoding="utf-8")
+    return {"filename": filename}
 
 
 @allenbrain_routes.route("/health", methods=["GET"])

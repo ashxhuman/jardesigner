@@ -5,7 +5,7 @@ import {
     Tab,
     Typography,
     TextField,
-    Grid,
+    Grid2 as Grid,
     IconButton,
     MenuItem,
     Button,
@@ -72,11 +72,12 @@ const HelpField = React.memo(({ id, label, value, onChange, type = "text", fullW
 
 
 // --- Main Component ---
-const AdaptorsMenuBox = ({ 
-    onConfigurationChange, 
-    currentConfig, 
-    meshMols, 
-    channelPrototypes = [] 
+const AdaptorsMenuBox = ({
+    onConfigurationChange,
+    currentConfig,
+    meshMols,
+    channelPrototypes = [],
+    flushRef,
 }) => {
     // --- Initialize State ---
     const [adaptors, setAdaptors] = useState(() => {
@@ -227,69 +228,78 @@ const AdaptorsMenuBox = ({
     };
 
     // --- Save/Refresh Logic ---
+    const getAdaptorData = useCallback(() => {
+        return adaptorsRef.current.map(a => {
+            const chemPath = (a.chemMesh && a.chemMol) ? `${a.chemMesh}/${a.chemMol}` : '';
+            const elecPath = a.elecEntity;
+
+            if (!chemPath || !elecPath) return null;
+
+            const baselineNum = parseFloat(a.baseline);
+            const slopeNum = parseFloat(a.slope);
+            if (isNaN(baselineNum) || isNaN(slopeNum)) return null;
+
+            const baseObj = {
+                baseline: baselineNum,
+                slope: slopeNum,
+            };
+
+            if (a.direction === 'chemToElec') {
+                baseObj.source = chemPath;
+                baseObj.sourceField = a.chemField;
+                baseObj.dest = elecPath;
+                baseObj.destField = a.elecField;
+            } else {
+                baseObj.source = elecPath;
+                baseObj.sourceField = a.elecField;
+                baseObj.dest = chemPath;
+                baseObj.destField = a.chemField;
+            }
+            return baseObj;
+        }).filter(item => item !== null);
+    }, []);
+
     useEffect(() => {
-        const getAdaptorDataForUnmount = () => {
-            return adaptorsRef.current.map(a => {
-                const chemPath = (a.chemMesh && a.chemMol) ? `${a.chemMesh}/${a.chemMol}` : '';
-                const elecPath = a.elecEntity;
-
-                if (!chemPath || !elecPath) return null;
-
-                const baselineNum = parseFloat(a.baseline);
-                const slopeNum = parseFloat(a.slope);
-                if (isNaN(baselineNum) || isNaN(slopeNum)) return null;
-
-                const baseObj = {
-                    baseline: baselineNum,
-                    slope: slopeNum,
-                };
-
-                if (a.direction === 'chemToElec') {
-                    baseObj.source = chemPath;
-                    baseObj.sourceField = a.chemField;
-                    baseObj.dest = elecPath;
-                    baseObj.destField = a.elecField;
-                } else {
-                    baseObj.source = elecPath;
-                    baseObj.sourceField = a.elecField;
-                    baseObj.dest = chemPath;
-                    baseObj.destField = a.chemField;
-                }
-                return baseObj;
-            }).filter(item => item !== null);
-        };
-
         return () => {
             if (onConfigurationChangeRef.current) {
-                const configData = getAdaptorDataForUnmount();
-                onConfigurationChangeRef.current({ adaptors: configData });
+                onConfigurationChangeRef.current({ adaptors: getAdaptorData() });
             }
         };
-    }, []);
+    }, [getAdaptorData]);
+
+    useEffect(() => {
+        if (!flushRef) return;
+        flushRef.current = () => ({ adaptors: getAdaptorData() });
+        return () => { flushRef.current = null; };
+    }, [flushRef, getAdaptorData]);
 
     // --- Render Helpers ---
     const renderChemicalSection = () => (
         <Grid container spacing={2}>
-            <Grid item xs={12}>
-                <HelpField 
-                    id="chemMesh" 
-                    label="Chem Compartment" 
-                    select 
-                    value={activeAdaptorData.chemMesh} 
-                    onChange={(id, v) => updateAdaptor(activeAdaptor, id, v)} 
+            <Grid size={12}>
+                <HelpField
+                    id="chemMesh"
+                    label="Chem Compartment"
+                    select
+                    error={!activeAdaptorData.chemMesh}
+                    helperText={!activeAdaptorData.chemMesh ? 'Select a compartment' : undefined}
+                    value={activeAdaptorData.chemMesh}
+                    onChange={(id, v) => updateAdaptor(activeAdaptor, id, v)}
                     helptext="Select the chemical compartment mesh."
                 >
                     <MenuItem value=""><em>Select...</em></MenuItem>
                     {chemCompartmentOptions.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
                 </HelpField>
             </Grid>
-            <Grid item xs={12}>
-                <HelpField 
-                    id="chemMol" 
-                    label="Molecule Name" 
-                    select 
-                    value={activeAdaptorData.chemMol} 
-                    onChange={(id, v) => updateAdaptor(activeAdaptor, id, v)} 
+            <Grid size={12}>
+                <HelpField
+                    id="chemMol"
+                    label="Molecule Name"
+                    select
+                    error={!!activeAdaptorData.chemMesh && !activeAdaptorData.chemMol}
+                    helperText={!!activeAdaptorData.chemMesh && !activeAdaptorData.chemMol ? 'Select a molecule' : undefined}
+                    value={activeAdaptorData.chemMol}
+                    onChange={(id, v) => updateAdaptor(activeAdaptor, id, v)}
                     helptext="Select the molecule."
                     disabled={!activeAdaptorData.chemMesh}
                 >
@@ -297,7 +307,7 @@ const AdaptorsMenuBox = ({
                     {moleculeOptions.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
                 </HelpField>
             </Grid>
-            <Grid item xs={12}>
+            <Grid size={12}>
                 <HelpField 
                     id="chemField" 
                     label="Field" 
@@ -314,7 +324,7 @@ const AdaptorsMenuBox = ({
 
     const renderElectricalSection = () => (
         <Grid container spacing={2}>
-            <Grid item xs={12}>
+            <Grid size={12}>
                 <HelpField 
                     id="elecEntity" 
                     label="Electrical Entity" 
@@ -330,7 +340,7 @@ const AdaptorsMenuBox = ({
                     <MenuItem value={OPTION_USER_SPECIFIED}>{OPTION_USER_SPECIFIED}</MenuItem>
                 </HelpField>
             </Grid>
-            <Grid item xs={12}>
+            <Grid size={12}>
                  <HelpField 
                     id="elecField" 
                     label="Field" 
@@ -348,7 +358,7 @@ const AdaptorsMenuBox = ({
     );
 
     return (
-        <Box sx={{ p: 2, background: '#f5f5f5', borderRadius: 2 }}>
+        <Box sx={{ p: 2, bgcolor: 'background.paper' }}>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>Adaptors Configuration</Typography>
                 <Tooltip title={helpText.main} placement="right">
@@ -366,17 +376,17 @@ const AdaptorsMenuBox = ({
              </Box>
 
              {activeAdaptorData && (
-                 <Box sx={{ mt: 2, p: 2, border: '1px solid #e0e0e0', borderRadius: '4px' }}>
+                 <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                     
                     {/* 2. Stacked Layout with Vertical Flip Logic */}
                     <Grid container spacing={2}>
                         
                         {/* Source Section (Top) */}
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1, color: 'primary.main', textAlign: 'left' }}>
                                 Source: {activeAdaptorData.direction === 'chemToElec' ? 'Chemical' : 'Electrical'}
                             </Typography>
-                            <Box sx={{ p: 2, border: '1px dashed #ccc', borderRadius: 2 }}>
+                            <Box sx={{ p: 2, border: '1px dashed', borderColor: 'divider', borderRadius: 2 }}>
                                 {activeAdaptorData.direction === 'chemToElec' 
                                     ? renderChemicalSection() 
                                     : renderElectricalSection()
@@ -385,7 +395,7 @@ const AdaptorsMenuBox = ({
                         </Grid>
 
                         {/* Flip Button (Middle) */}
-                        <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'center', my: 1 }}>
+                        <Grid size={12} sx={{ display: 'flex', justifyContent: 'center', my: 1 }}>
                              <Tooltip title="Swap Direction (Vertical)">
                                 <IconButton 
                                     onClick={toggleDirection} 
@@ -398,11 +408,11 @@ const AdaptorsMenuBox = ({
                         </Grid>
 
                         {/* Destination Section (Bottom) */}
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1, color: 'secondary.main', textAlign: 'left' }}>
                                 Destination: {activeAdaptorData.direction === 'chemToElec' ? 'Electrical' : 'Chemical'}
                             </Typography>
-                            <Box sx={{ p: 2, border: '1px dashed #ccc', borderRadius: 2 }}>
+                            <Box sx={{ p: 2, border: '1px dashed', borderColor: 'divider', borderRadius: 2 }}>
                                 {activeAdaptorData.direction === 'chemToElec' 
                                     ? renderElectricalSection() 
                                     : renderChemicalSection()
@@ -411,13 +421,13 @@ const AdaptorsMenuBox = ({
                         </Grid>
                     </Grid>
 
-                    <Grid item xs={12}><Divider sx={{ my: 3 }} /></Grid>
+                    <Grid size={12}><Divider sx={{ my: 3 }} /></Grid>
 
                     {/* 4. Mapping Section */}
-                     <Grid item xs={12}>
+                     <Grid size={12}>
                          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>Mapping</Typography>
                          <Grid container spacing={2}>
-                            <Grid item xs={12} sm={6}>
+                            <Grid size={{ xs: 12, sm: 6 }}>
                                 <HelpField 
                                     id="baseline" 
                                     label="Baseline" 
@@ -429,22 +439,29 @@ const AdaptorsMenuBox = ({
                                     InputProps={{ inputProps: { step: 0.1 } }}
                                 />
                             </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <HelpField 
-                                    id="slope" 
-                                    label="Slope" 
-                                    required 
-                                    type="number" 
-                                    value={activeAdaptorData.slope} 
-                                    onChange={(id,v) => updateAdaptor(activeAdaptor, id, v)} 
-                                    helptext={helpText.fields.slope} 
-                                    InputProps={{ inputProps: { step: 0.1 } }}
-                                />
+                            <Grid size={{ xs: 12, sm: 6 }}>
+                                {(() => {
+                                    const slopeZero = Number(activeAdaptorData.slope) === 0;
+                                    return (
+                                        <HelpField
+                                            id="slope"
+                                            label="Slope"
+                                            required
+                                            type="number"
+                                            value={activeAdaptorData.slope}
+                                            onChange={(id,v) => updateAdaptor(activeAdaptor, id, v)}
+                                            helptext={helpText.fields.slope}
+                                            InputProps={{ inputProps: { step: 0.1 } }}
+                                            helperText={slopeZero ? 'Slope of 0: destination will always equal the baseline; no coupling' : undefined}
+                                            {...(slopeZero && { FormHelperTextProps: { sx: { color: 'warning.main' } } })}
+                                        />
+                                    );
+                                })()}
                             </Grid>
                          </Grid>
                      </Grid>
 
-                    <Button variant="outlined" color="secondary" startIcon={<DeleteIcon />} onClick={() => removeAdaptor(activeAdaptor)} sx={{ mt: 3 }}>
+                    <Button variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => removeAdaptor(activeAdaptor)} sx={{ mt: 3 }}>
                          Remove Adaptor
                      </Button>
                  </Box>
@@ -468,8 +485,8 @@ const AdaptorsMenuBox = ({
                     />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setCustomEntityDialogOpen(false)}>Cancel</Button>
-                    <Button onClick={handleSaveCustomEntity}>Set Entity</Button>
+                    <Button variant="text" onClick={() => setCustomEntityDialogOpen(false)}>Cancel</Button>
+                    <Button variant="contained" onClick={handleSaveCustomEntity}>Set Entity</Button>
                 </DialogActions>
             </Dialog>
         </Box>

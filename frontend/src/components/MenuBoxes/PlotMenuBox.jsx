@@ -5,7 +5,7 @@ import {
     Tab,
     Typography,
     TextField,
-    Grid,
+    Grid2 as Grid,
     IconButton,
     MenuItem,
     Button,
@@ -28,8 +28,15 @@ import { getCompartmentOptions, OPTION_USER_SPECIFIED } from '../../utils/menuHe
 // --- Define options outside component ---
 const nonChemFieldOptions = [
     'Vm', 'Im', 'inject', 'Gbar', 'Gk', 'Ik', 'ICa', 'Cm', 'Rm', 'Ra',
-    'Ca', 'activation', 'current', 'modulation', 'psdArea'
+    'Ca', 'current', 'activation', 'modulation', 'psdArea'
 ];
+const RELPATH_REQUIRED_FIELDS = new Set(['Gbar', 'Gk', 'Ik', 'ICa', 'Ca', 'activation', 'modulation']);
+const nonChemFieldLabels = {
+    'current': 'vclamp current',
+    'activation': 'channel activation',
+    'modulation': 'channel modulation',
+};
+const getFieldLabel = (field) => nonChemFieldLabels[field] || field;
 const chemFieldOptions = ['n', 'conc', 'volume', 'concInit', 'nInit'];
 const modeOptions = ['time', 'space', 'wave', 'raster'];
 
@@ -41,19 +48,33 @@ const safeToString = (value, defaultValue = '') => {
 // --- Regex to parse chem paths like "DEND/Ca[0]" ---
 const chemPathRegex = /([^/]+)\/([^[]+)(\[.*\])?/;
 
+// --- Compute auto title from path, field, childPath ---
+const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+const computeDefaultTitle = (path, field, childPath) => {
+    if (chemFieldOptions.includes(field)) {
+        return [(childPath || ''), capitalize(field || '')].filter(Boolean).join(' ');
+    }
+    const pathPart = childPath ? `${path || ''}/${childPath}` : (path || '');
+    return [capitalize(pathPart), capitalize(getFieldLabel(field || ''))].filter(Boolean).join(' ');
+};
+
 // --- Default state for a new plot entry ---
-const createDefaultPlot = () => ({
-    path: 'soma', // Default to soma
-    field: nonChemFieldOptions[0],
-    chemProto: '.', 
-    childPath: '', 
-    molIndex: '',  
-    title: '',
-    yMin: '0.0',
-    yMax: '0.0',
-    mode: 'time',
-    waveFrames: '100',
-});
+const createDefaultPlot = () => {
+    const path = 'soma';
+    const field = nonChemFieldOptions[0];
+    return {
+        path,
+        field,
+        chemProto: '.',
+        childPath: '',
+        molIndex: '',
+        title: computeDefaultTitle(path, field, ''),
+        yMin: '0.0',
+        yMax: '0.0',
+        mode: 'time',
+        waveFrames: '100',
+    };
+};
 
 // --- Reusable HelpField Component ---
 const HelpField = React.memo(({ id, label, value, onChange, onBlur, type = "text", fullWidth = true, ...props }) => {
@@ -78,13 +99,15 @@ const HelpField = React.memo(({ id, label, value, onChange, onBlur, type = "text
 });
 
 // --- Main Component ---
-const PlotMenuBox = ({ 
-    onConfigurationChange, 
-    currentConfig, 
+const PlotMenuBox = ({
+    onConfigurationChange,
+    currentConfig,
     meshMols,
     elecPaths = [],
     spinePaths = [],
-    channelPrototypes = [] // List of channel prototype names
+    channelPrototypes = [],
+    stims = [],
+    flushRef
 }) => {
     const [plots, setPlots] = useState(() => {
         const initialPlots = currentConfig?.map(p => {
@@ -119,6 +142,9 @@ const PlotMenuBox = ({
                 }
             } else {
                 initialChildPath = p.relpath || '';
+                if (field === 'current' && !initialChildPath) {
+                    initialChildPath = 'vclamp';
+                }
             }
 
             return {
@@ -127,7 +153,7 @@ const PlotMenuBox = ({
                 chemProto: initialChemProto,
                 childPath: initialChildPath,
                 molIndex: initialMolIndex,
-                title: p.title || '',
+                title: p.title || computeDefaultTitle(p.path || 'soma', field, initialChildPath),
                 yMin: formatFloat(p.ymin) || '0.0',
                 yMax: formatFloat(p.ymax) || '0.0',
                 mode: p.mode || 'time',
@@ -189,9 +215,14 @@ const PlotMenuBox = ({
                             updatedPlot.childPath = '';
                             updatedPlot.molIndex = '';
                         } else if (!wasChem && isNowChem) {
-                            updatedPlot.chemProto = ''; 
+                            updatedPlot.chemProto = '';
                             updatedPlot.childPath = '';
                             updatedPlot.molIndex = '';
+                        }
+                        if (value === 'current') {
+                            updatedPlot.childPath = 'vclamp';
+                        } else if (plot.field === 'current' && !isNowChem) {
+                            updatedPlot.childPath = '';
                         }
                     }
 
@@ -207,6 +238,15 @@ const PlotMenuBox = ({
                             updatedPlot.molIndex = value;
                         } else {
                             return plot; // Reject floats, negatives, or non-digits
+                        }
+                    }
+
+                    // Auto-update title when path, field, or childPath changes
+                    if (['path', 'field', 'childPath'].includes(key)) {
+                        const oldAutoTitle = computeDefaultTitle(plot.path, plot.field, plot.childPath);
+                        const newAutoTitle = computeDefaultTitle(updatedPlot.path, updatedPlot.field, updatedPlot.childPath);
+                        if (plot.title === '' || plot.title === oldAutoTitle) {
+                            updatedPlot.title = newAutoTitle;
                         }
                     }
 
@@ -263,6 +303,14 @@ const PlotMenuBox = ({
     }, [isChemField, meshMols, activePlotData?.chemProto]);
 
 
+    const vclampPaths = useMemo(() => {
+        const paths = new Set();
+        if (Array.isArray(stims)) {
+            stims.forEach(s => { if (s.field === 'vclamp' && s.path) paths.add(s.path); });
+        }
+        return paths;
+    }, [stims]);
+
     // --- Save/Refresh Logic ---
     const getPlotDataForSave = useCallback(() => {
         return plotsRef.current.map(plotState => {
@@ -317,7 +365,13 @@ const PlotMenuBox = ({
             handleRefreshModel();
         };
     }, [handleRefreshModel]);
-    
+
+    useEffect(() => {
+        if (!flushRef) return;
+        flushRef.current = () => ({ plots: getPlotDataForSave() });
+        return () => { flushRef.current = null; };
+    }, [flushRef, getPlotDataForSave]);
+
     const getTabLabel = (plot) => {
         const isChem = chemFieldOptions.includes(plot.field);
         if (isChem) {
@@ -331,7 +385,7 @@ const PlotMenuBox = ({
     const showChemCompartmentWarning = isChemField && !chemCompartmentOptions.length;
 
     return (
-        <Box sx={{ p: 2, background: '#f5f5f5', borderRadius: 2 }}>
+        <Box sx={{ p: 2, bgcolor: 'background.paper' }}>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>Plot Configuration</Typography>
                 <Tooltip title={helpText.main} placement="right"><IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton></Tooltip>
@@ -341,17 +395,17 @@ const PlotMenuBox = ({
             </Box>
 
             <Box sx={{ borderBottom: 1, borderColor: 'divider', mt: 1 }}>
-                <Tabs value={activePlot} onChange={(e, nv) => setActivePlot(nv)} variant="scrollable" scrollButtons="auto">
+                <Tabs value={activePlot} onChange={(e, nv) => setActivePlot(nv)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>
                     {plots.map((plot, index) => <Tab key={index} label={getTabLabel(plot)} />)}
                     <IconButton onClick={addPlot} sx={{ alignSelf: 'center', ml: '10px' }}><AddIcon /></IconButton>
                 </Tabs>
             </Box>
 
             {activePlotData && (
-                <Box sx={{ mt: 2, p: 2, border: '1px solid #e0e0e0', borderRadius: '4px' }}>
+                <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '8px' }}>
                     <Grid container spacing={2}>
                         {/* 1. Parent Elec Compartment: Top, Full Width, Menu+Dialog */}
-                        <Grid item xs={12}>
+                        <Grid size={12}>
                              <HelpField 
                                 id="path" 
                                 label="Parent Elec Compartment" 
@@ -371,17 +425,23 @@ const PlotMenuBox = ({
                              </HelpField>
                         </Grid>
 
-                        <Grid item xs={12} sm={6}>
-                            <HelpField id="field" label="Field" select required value={activePlotData.field} onChange={(id, v) => updatePlot(activePlot, id, v)} helptext={helpText.fields.field}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                            <HelpField id="field" label="Field" select required
+                                error={!activePlotData.field}
+                                helperText={!activePlotData.field ? 'Select a field to plot' : undefined}
+                                value={activePlotData.field}
+                                onChange={(id, v) => updatePlot(activePlot, id, v)}
+                                helptext={helpText.fields.field}
+                            >
                                 <MenuItem value=""><em>Select Field...</em></MenuItem>
                                 <ListSubheader>Electrical/Other</ListSubheader>
-                                {nonChemFieldOptions.map(opt => <MenuItem key={opt} value={opt}>{opt}</MenuItem>)}
+                                {nonChemFieldOptions.map(opt => <MenuItem key={opt} value={opt}>{getFieldLabel(opt)}</MenuItem>)}
                                 <ListSubheader>Chemical</ListSubheader>
                                 {chemFieldOptions.map(opt => <MenuItem key={opt} value={opt}>{opt}</MenuItem>)}
                             </HelpField>
                         </Grid>
                          
-                        <Grid item xs={12} sm={6}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
                             <HelpField 
                                 id="chemProto" 
                                 label="Chem Compartment" 
@@ -402,7 +462,7 @@ const PlotMenuBox = ({
                         
                          {isChemField ? (
                              <>
-                                <Grid item xs={12} sm={6}>
+                                <Grid size={{ xs: 12, sm: 6 }}>
                                     <HelpField 
                                         id="childPath" 
                                         label="Molecule Path" 
@@ -419,7 +479,7 @@ const PlotMenuBox = ({
                                     </HelpField>
                                     {!activePlotData.childPath && <FormHelperText error>Required</FormHelperText>}
                                 </Grid>
-                                <Grid item xs={12} sm={6}>
+                                <Grid size={{ xs: 12, sm: 6 }}>
                                     <HelpField 
                                         id="molIndex" 
                                         label="Molecule Index (int/blank)" 
@@ -430,17 +490,41 @@ const PlotMenuBox = ({
                                     />
                                 </Grid>
                              </>
-                         ) : (
+                         ) : activePlotData.field === 'current' ? (
+                             <Grid size={{ xs: 12, sm: 6 }}>
+                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                     <TextField
+                                         fullWidth
+                                         size="small"
+                                         label="Relative Path"
+                                         value="vclamp"
+                                         disabled
+                                         variant="outlined"
+                                         error={stims.length > 0 && !vclampPaths.has(activePlotData.path)}
+                                     />
+                                     <Tooltip title="VClamp child object — required for the 'current' field" placement="right">
+                                         <IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton>
+                                     </Tooltip>
+                                 </Box>
+                                 {stims.length > 0 && !vclampPaths.has(activePlotData.path) &&
+                                     <FormHelperText error>Warning: No VClamp stim on this compartment</FormHelperText>}
+                             </Grid>
+                         ) : (() => {
+                             const relpathRequired = RELPATH_REQUIRED_FIELDS.has(activePlotData.field);
+                             return (
                              <>
                                  {/* Relative Path as Menu for Non-Chem Fields */}
-                                 <Grid item xs={12} sm={6}>
+                                 <Grid size={{ xs: 12, sm: 6 }}>
                                     <HelpField
                                         id="childPath"
-                                        label="Relative Path (Optional)"
+                                        label={relpathRequired ? "Relative Path" : "Relative Path (Optional)"}
                                         select
+                                        required={relpathRequired}
                                         value={activePlotData.childPath}
                                         onChange={(id, v) => handleChildPathChange(activePlot, v)}
                                         helptext={helpText.fields.childPath}
+                                        error={relpathRequired && !activePlotData.childPath}
+                                        helperText={relpathRequired && !activePlotData.childPath ? 'Required for this field' : undefined}
                                     >
                                         <MenuItem value=""><em>None</em></MenuItem>
                                         {activePlotData.childPath &&
@@ -455,23 +539,50 @@ const PlotMenuBox = ({
                                     </HelpField>
                                 </Grid>
                              </>
-                         )}
+                             );
+                         })()}
                          
-                         <Grid item xs={12} sm={6}><HelpField id="title" label="Title (Optional)" value={activePlotData.title} onChange={(id, v) => updatePlot(activePlot, id, v)} helptext={helpText.fields.title} /></Grid>
-                         <Grid item xs={12} sm={6}><HelpField id="yMin" label="Y Min (Optional, 0=auto)" type="number" value={activePlotData.yMin} onChange={(id, v) => updatePlot(activePlot, id, v)} helptext={helpText.fields.yMin} /></Grid>
-                         <Grid item xs={12} sm={6}><HelpField id="yMax" label="Y Max (Optional, 0=auto)" type="number" value={activePlotData.yMax} onChange={(id, v) => updatePlot(activePlot, id, v)} helptext={helpText.fields.yMax} /></Grid>
-                        
+                         <Grid size={{ xs: 12, sm: 6 }}><HelpField id="title" label="Title (Optional)" value={activePlotData.title} onChange={(id, v) => updatePlot(activePlot, id, v)} helptext={helpText.fields.title} /></Grid>
+                         <Grid size={{ xs: 12, sm: 6 }}><HelpField id="yMin" label="Y Min (Optional, 0=auto)" type="number" value={activePlotData.yMin} onChange={(id, v) => updatePlot(activePlot, id, v)} helptext={helpText.fields.yMin} /></Grid>
+                         <Grid size={{ xs: 12, sm: 6 }}>{(() => {
+                             const yMinN = parseFloat(activePlotData.yMin);
+                             const yMaxN = parseFloat(activePlotData.yMax);
+                             const yRangeWarn = (!isNaN(yMinN) && yMinN !== 0 && !isNaN(yMaxN) && yMaxN !== 0 && yMaxN < yMinN)
+                                 ? 'Y max is less than Y min — axis range will be invalid' : undefined;
+                             return (
+                                 <HelpField id="yMax" label="Y Max (Optional, 0=auto)" type="number"
+                                     value={activePlotData.yMax}
+                                     onChange={(id, v) => updatePlot(activePlot, id, v)}
+                                     helptext={helpText.fields.yMax}
+                                     helperText={yRangeWarn}
+                                     {...(yRangeWarn && { FormHelperTextProps: { sx: { color: 'warning.main' } } })}
+                                 />
+                             );
+                         })()}</Grid>
+
                         {/* Mode moved to bottom next to Wave Frames */}
-                        <Grid item xs={12} sm={6}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
                             <HelpField id="mode" label="Mode (Optional)" select value={activePlotData.mode} onChange={(id, v) => updatePlot(activePlot, id, v)} helptext={helpText.fields.mode}>
                                 {modeOptions.map(opt => <MenuItem key={opt} value={opt}>{opt}</MenuItem>)}
                              </HelpField>
                          </Grid>
-                        <Grid item xs={12} sm={6}>
-                             <HelpField id="waveFrames" label="# Wave Frames (if Mode='wave')" type="number" value={activePlotData.waveFrames} onChange={(id, v) => updatePlot(activePlot, id, v)} helptext={helpText.fields.waveFrames} InputProps={{ inputProps: { min: 0, step: 1 } }} disabled={activePlotData.mode !== 'wave'}/>
-                         </Grid>
+                        <Grid size={{ xs: 12, sm: 6 }}>{(() => {
+                            const wfN = parseInt(activePlotData.waveFrames, 10);
+                            const wfError = activePlotData.mode === 'wave' && (!isNaN(wfN) && wfN <= 0);
+                            return (
+                                <HelpField id="waveFrames" label="# Wave Frames (if Mode='wave')" type="number"
+                                    value={activePlotData.waveFrames}
+                                    onChange={(id, v) => updatePlot(activePlot, id, v)}
+                                    helptext={helpText.fields.waveFrames}
+                                    InputProps={{ inputProps: { min: 0, step: 1 } }}
+                                    disabled={activePlotData.mode !== 'wave'}
+                                    error={wfError}
+                                    helperText={wfError ? 'Wave frames must be a positive integer' : undefined}
+                                />
+                            );
+                        })()}</Grid>
                     </Grid>
-                    <Button variant="outlined" color="secondary" startIcon={<DeleteIcon />} onClick={() => removePlot(activePlot)} sx={{ mt: 2 }}>
+                    <Button variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => removePlot(activePlot)} sx={{ mt: 2 }}>
                         Remove Plot
                     </Button>
                 </Box>
@@ -495,8 +606,8 @@ const PlotMenuBox = ({
                     />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setCustomPathDialogOpen(false)}>Cancel</Button>
-                    <Button onClick={handleSaveCustomPath}>Set Path</Button>
+                    <Button variant="text" onClick={() => setCustomPathDialogOpen(false)}>Cancel</Button>
+                    <Button variant="contained" onClick={handleSaveCustomPath}>Set Path</Button>
                 </DialogActions>
             </Dialog>
         </Box>

@@ -39,6 +39,7 @@ from . import fixXreacs
 
 from moose.neuroml.NeuroML import NeuroML
 from moose.neuroml.ChannelML import ChannelML
+from moose import channels
 from . import context
 
 _cmd_queue = queue.Queue()
@@ -638,7 +639,6 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                 fpath = pp['source']
                 if self.sessionDir != None:
                     fpath = self._safe_session_path( fpath )
-                print( "Server log: Loading cell morpho file: ", fpath )
                 self._loadElec( fpath, 'cell' )
             elif ptype == 'in_memory':
                 self.inMemoryProto( "cell", pp )
@@ -722,6 +722,15 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                     if chanName != cp['name']:
                         chan = moose.element( '/library/' + chanName )
                         chan.name = cp['name']
+                elif ctype == 'icg':
+                    suffix, modeldb_id = cp['source'].rsplit( '_', 1 )
+                    proto = channels.make_prototype(
+                                modeldb_id=int( modeldb_id ),
+                                suffix=suffix,
+                                temperature=self.temperature,
+                            )
+                    if proto.name != cp['name']:
+                        proto.name = cp['name']
 
     def buildChemProto( self ):
         if hasattr( self, "chemProto" ):
@@ -732,7 +741,7 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                     #self.chemid = moose.element( '/library/' + cp['name'] )
                     comptlist = moose.wildcardFind( '/library/##[ISA=ChemCompt]' )
                     if len( comptlist ) == 0:
-                        print("loadChem: No compartment found in file: ", fname)
+                        print("loadChem: No compartment found in file: ", cp['source'])
                         return
                     self.comptDict.update( {cc.name:cc.path for cc in comptlist} )
                 elif ctype in ['kkit', 'sbml']:
@@ -849,7 +858,10 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         for i in self.passiveDistrib:
             assert( "path" in i )
             temp.append( "." )
-            temp.append( i["path"] )
+            path = i["path"]
+            if path == "#":
+                path = "#[ISA=CompartmentBase]"
+            temp.append( path )
             for key, val in i.items():
                 if key != "path":
                     temp.append( key )
@@ -1134,16 +1146,22 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
     ################################################################
     # Here we set up the plots. Dummy for cases that don't match conditions
     ################################################################
-    def _collapseElistToPathAndClass( self, comptList, path, className ):
+    def _collapseElistToPathAndClass( self, comptList, relpath, className ):
+        """Return the child objects found at relpath inside each compartment,
+        filtered to those that are instances of className.  Compartments that
+        lack the child, and root '/' dummy placeholders returned by
+        compartmentsFromExpression for non-matching compartments, are silently
+        skipped."""
         dummy = moose.element( '/' )
-        ret = [ dummy ] * len( comptList )
-        j = 0
-        for i in comptList:
-            if moose.exists( i.path + '/' + path ):
-                obj = moose.element( i.path + '/' + path )
+        ret = []
+        for compt in comptList:
+            if compt == dummy:
+                continue
+            child_path = compt.path + '/' + relpath
+            if moose.exists( child_path ):
+                obj = moose.element( child_path )
                 if obj.isA[ className ]:
-                    ret[j] = obj
-            j += 1
+                    ret.append( obj )
         return ret
 
     # Utility function for doing lookups for objects.
@@ -1276,13 +1294,13 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
                         tabs.vec.threshold = -0.02 # Threshold for classifying Vm as a spike.
                         tabs.vec.useSpikeMode = True # spike detect mode on
 
-            vtabs = moose.vec( tabs )
-            q = 0
-            for p in [ x for x in plotObj if x != dummy ]:
-                #print( p.path, plotField, q )
-                moose.connect( vtabs[q], 'requestOut', p, plotField )
-                objList.append( p )
-                q += 1
+                vtabs = moose.vec( tabs )
+                q = 0
+                for p in [ x for x in plotObj if x != dummy ]:
+                    #print( p.path, plotField, q )
+                    moose.connect( vtabs[q], 'requestOut', p, plotField )
+                    objList.append( p )
+                    q += 1
 
     def _buildMoogli( self ):
         if not hasattr( self, 'moogli' ):
@@ -1301,6 +1319,8 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
             dendCompts = self.elecid.compartmentsFromExpression[ pair ]
             #spineCompts = self.elecid.spinesFromExpression[ pair ]
             dendObj, mooField = self._parseComptField( dendCompts, i, knownFields )
+            dummy = moose.element( '/' )
+            dendObj = [ obj for obj in dendObj if obj != dummy ]
             numMoogli = len( dendObj )
             iObj = DictToClass( i ) # Used as 'args' in makeMoogli
             pr = moose.PyRun( '/model/moogli_' + groupId )
@@ -2120,8 +2140,12 @@ print( "Wall Clock Time = {:8.2f}, simtime = {:8.3f}".format( time.time() - _sta
         #comptlist = moose.wildcardFind( chem.path + '/##[ISA=ChemCompt]' )
         comptlist = moose.wildcardFind( '/library/##[ISA=ChemCompt]' )
         if len( comptlist ) == 0:
+            # Insert a compartment here
             print("Error: loadChem: No compartment found in file: ", fname)
             return
+        elif len( comptlist ) == 1 and comptlist[0].name == "cell":
+            comptlist[0].name = chemName
+
         fixXreacs.fixXreacs( chem.path )
         self.comptDict.update( {cc.name:cc.path for cc in comptlist } )
         #print( f"Loaded chem file {fname} to {chemName}, comptDic={self.comptDict}" )
@@ -2247,31 +2271,6 @@ def randomPlacementFunc( numModels, idx ):
     nx = int( np.sqrt( numModels ) )
     return np.random.random()*0.5e-3, np.random.random()*0.5e-3, 0.0
 
-# ============================================================================
-# Pause/Resume Threading Support
-# ============================================================================
-_simulation_thread = None
-_is_paused = False
-_remaining_runtime = 0
-_target_simtime = 0
-
-def _run_simulation(rdes, runtime):
-    """Run MOOSE simulation in background thread."""
-    global _remaining_runtime, _target_simtime, _is_paused
-    
-    start_simtime = moose.element("/clock").currentTime
-    _target_simtime = start_simtime + runtime
-    
-    moose.start(runtime)
-    
-    current_simtime = moose.element("/clock").currentTime
-    _remaining_runtime = max(0, _target_simtime - current_simtime)
-    
-    if _remaining_runtime <= 1e-9 and not _is_paused:
-        rdes.display()
-        time.sleep(0.1)
-        rdes.runMooView.notifySimulationEnd(rdes.dataChannelId)
-
 def serverCommandLoop( rdes ):
     reader_thread = threading.Thread(target=_stdin_reader, daemon=True)
     reader_thread.start()
@@ -2306,17 +2305,9 @@ def serverCommandLoop( rdes ):
                 moose.stop()
 
             elif command == "reset":
-                if _simulation_thread and _simulation_thread.is_alive():
-                    moose.stop()
-                    _simulation_thread.join(timeout=2.0)
-                _is_paused = False
-                _remaining_runtime = 0
                 moose.reinit()
 
             elif command == "quit":
-                if _simulation_thread and _simulation_thread.is_alive():
-                    moose.stop()
-                    _simulation_thread.join(timeout=2.0)
                 print("Received 'quit' command. Exiting.")
                 break
             else:

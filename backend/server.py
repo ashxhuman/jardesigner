@@ -1,5 +1,6 @@
-import eventlet
-eventlet.monkey_patch()
+from gevent import monkey
+monkey.patch_all(thread=False)
+
 import os
 import sys
 import subprocess
@@ -8,6 +9,7 @@ import uuid
 import time
 import threading
 import shutil
+import zipfile
 import re
 import secrets
 from flask import Flask, request, jsonify, send_from_directory, send_file, after_this_request
@@ -30,13 +32,20 @@ app = Flask(__name__)
 CORS(app)
 
 # Quiet logging
-socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
+socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False, async_mode='gevent')
 
-from neuromorpho.neuromorpho_routes import neuromorpho_routes
+from neuromorpho.neuromorpho_routes import neuromorpho_routes, stage_neuron as _nm_stage
+from neuromorpho.neuromorpho import search_neurons, fetch_neuron_by_id as _nm_fetch_by_id, neuron_to_item as _nm_to_item
 app.register_blueprint(neuromorpho_routes, url_prefix="/neuromorpho")
 
-from allenbrain.allenbrain_routes import allenbrain_routes
+from allenbrain.allenbrain_routes import allenbrain_routes, stage_specimen as _ab_stage
+from allenbrain.allenbrain import fetch_specimen_by_id as _ab_fetch_by_id, specimen_to_details as _ab_to_details
 app.register_blueprint(allenbrain_routes, url_prefix="/allenbrain")
+
+from icg_database.icg_routes import icg_routes
+from icg_database.icg import get_channel_detail as icg_get_channel_detail, stage_channel as icg_stage
+app.register_blueprint(icg_routes, url_prefix="/icg")
+
 
 # --- Store running process and session info ---
 running_processes = {}
@@ -109,7 +118,7 @@ def terminate_process(pid):
 _UPLOADS_REAL = os.path.realpath(USER_UPLOADS_DIR)
 
 # Extensions accepted for user-uploaded model files.
-_ALLOWED_UPLOAD_EXTENSIONS = {'.swc', '.p', '.g', '.xml', '.sbml', '.nml', '.json'}
+_ALLOWED_UPLOAD_EXTENSIONS = {'.swc', '.p', '.g', '.xml', '.sbml', '.nml', '.json', '.md', '.png', '.jpg', '.jpeg', '.svg', '.html'}
 
 def _is_safe_client_id(client_id):
     """Return True only if client_id resolves to a path within USER_UPLOADS_DIR."""
@@ -211,6 +220,157 @@ def handle_sim_command(data):
                 print(f"Error writing to PID {pid} stdin: {e}")
 
 
+# --- Proto Registry Endpoints ---
+
+PROTO_REGISTRY_DIR = os.path.join(BASE_DIR, 'proto_registry')
+_ALLOWED_STAGING_DIRS = {'CELL_MODELS', 'CHEM_MODELS', 'CHAN_MODELS'}
+
+
+_NM_ITEM_CACHE = os.path.join(BASE_DIR, 'data', 'neuromorpho', 'item_cache.json')
+
+def _nm_cache_load():
+    if os.path.exists(_NM_ITEM_CACHE):
+        try:
+            return json.loads(open(_NM_ITEM_CACHE).read())
+        except Exception:
+            return {}
+    return {}
+
+def _nm_cache_save(cache):
+    os.makedirs(os.path.dirname(_NM_ITEM_CACHE), exist_ok=True)
+    with open(_NM_ITEM_CACHE, 'w') as f:
+        json.dump(cache, f, indent=2)
+
+
+def _load_registry(proto_type):
+    path = os.path.join(PROTO_REGISTRY_DIR, f'{proto_type}_protos.json')
+    if not os.path.exists(path):
+        return None
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+@app.route('/proto_digest/<proto_type>', methods=['GET'])
+def get_proto_digest(proto_type):
+    if proto_type not in ('morpho', 'chan', 'chem'):
+        return jsonify({'error': 'Invalid type'}), 400
+    data = _load_registry(proto_type)
+    if data is None:
+        return jsonify({'items': []})
+    return jsonify(data)
+
+@app.route('/proto_detail/<proto_id>', methods=['GET'])
+def get_proto_detail(proto_id):
+    if proto_id.startswith('nm_'):
+        try:
+            neuron = _nm_fetch_by_id(int(proto_id[3:]))
+            return jsonify(_nm_to_item(neuron)['details'])
+        except Exception:
+            return jsonify({})
+
+    if proto_id.startswith('ab_'):
+        try:
+            specimen = _ab_fetch_by_id(int(proto_id[3:]))
+            return jsonify(_ab_to_details(specimen))
+        except Exception:
+            return jsonify({})
+
+    if proto_id.startswith('icg_'):
+        # id format: icg_{modeldb_id}_{suffix}  e.g.  icg_12345_Na_mit_usb
+        m = re.match(r'^icg_(\d+)_(.+)$', proto_id)
+        if m:
+            try:
+                return jsonify(icg_get_channel_detail(int(m.group(1)), m.group(2)))
+            except Exception:
+                pass
+        return jsonify({})
+
+    for proto_type in ('morpho', 'chan', 'chem'):
+        data = _load_registry(proto_type)
+        if data:
+            for item in data.get('items', []):
+                if item.get('id') == proto_id:
+                    return jsonify(item.get('details', {}))
+    return jsonify({'error': 'Not found'}), 404
+
+@app.route('/proto_search/<proto_type>', methods=['GET'])
+def search_protos(proto_type):
+    if proto_type not in ('morpho', 'chan', 'chem'):
+        return jsonify({'error': 'Invalid type'}), 400
+    q  = request.args.get('q', '').lower().strip()
+    db = request.args.get('db', 'Local')
+
+    if db == 'NeuroMorpho' and proto_type == 'morpho':
+        try:
+            raw = search_neurons(neuron_name=q if q else None, size=50)
+            neurons = raw.get('_embedded', {}).get('neuronResources', [])
+            return jsonify({'items': [_nm_to_item(n) for n in neurons]})
+        except Exception as e:
+            return jsonify({'error': str(e), 'items': []}), 500
+
+    data = _load_registry(proto_type)
+    if data is None:
+        return jsonify({'items': []})
+    if not q:
+        return jsonify(data)
+    filtered = [
+        item for item in data.get('items', [])
+        if q in item.get('name', '').lower()
+        or q in item.get('description', '').lower()
+        or q in item.get('source', '').lower()
+    ]
+    return jsonify({'items': filtered})
+
+@app.route('/proto_stage/<proto_id>/<client_id>', methods=['POST'])
+def stage_proto_file(proto_id, client_id):
+    """Copy a server-side proto file into the user's uploads directory."""
+    if not _is_safe_client_id(client_id):
+        return jsonify({'error': 'Invalid client_id'}), 400
+
+    if proto_id.startswith('nm_'):
+        try:
+            return jsonify(_nm_stage(int(proto_id[3:]), client_id))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    if proto_id.startswith('ab_'):
+        try:
+            return jsonify(_ab_stage(int(proto_id[3:]), client_id))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    if proto_id.startswith('icg_'):
+        m = re.match(r'^icg_(\d+)_(.+)$', proto_id)
+        if not m:
+            return jsonify({'error': 'Invalid ICG proto ID'}), 400
+        try:
+            return jsonify(icg_stage(int(m.group(1)), m.group(2), client_id))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    for proto_type in ('morpho', 'chan', 'chem'):
+        data = _load_registry(proto_type)
+        if data:
+            for item in data.get('items', []):
+                if item.get('id') == proto_id:
+                    server_file = item.get('server_file', '')
+                    if not server_file:
+                        return jsonify({'error': 'No server file for this proto'}), 400
+                    # Security: only allow files from known safe subdirectories.
+                    parts = server_file.replace('\\', '/').split('/')
+                    if len(parts) < 2 or parts[0] not in _ALLOWED_STAGING_DIRS or '..' in parts:
+                        return jsonify({'error': 'Invalid server file path'}), 400
+                    src = os.path.join(BASE_DIR, server_file)
+                    if not os.path.exists(src):
+                        return jsonify({'error': 'File not found on server'}), 404
+                    dest_dir = os.path.join(USER_UPLOADS_DIR, client_id)
+                    os.makedirs(dest_dir, exist_ok=True)
+                    filename = os.path.basename(src)
+                    dest = os.path.join(dest_dir, filename)
+                    shutil.copy2(src, dest)
+                    return jsonify({'filename': filename})
+    return jsonify({'error': 'Proto not found'}), 404
+
+
 @app.route('/launch_simulation', methods=['POST'])
 def launch_simulation():
     request_data = request.json
@@ -244,6 +404,27 @@ def launch_simulation():
 
     session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
     os.makedirs(session_dir, exist_ok=True)
+
+    # Check for missing external files before launching (skip if frontend already warned the user)
+    if not request_data.get('skip_missing_files_check'):
+        missing = []
+        cell = config_data.get('cellProto', {})
+        if isinstance(cell, dict) and cell.get('type') == 'file' and cell.get('source'):
+            if not os.path.isfile(os.path.join(session_dir, os.path.basename(cell['source']))):
+                missing.append(cell['source'])
+        for cp in config_data.get('chemProto', []):
+            if cp.get('type') in ('sbml', 'SBML', 'kkit') and cp.get('source'):
+                if not os.path.isfile(os.path.join(session_dir, os.path.basename(cp['source']))):
+                    missing.append(cp['source'])
+        for cp in config_data.get('chanProto', []):
+            if cp.get('type') == 'neuroml' and cp.get('source'):
+                if not os.path.isfile(os.path.join(session_dir, os.path.basename(cp['source']))):
+                    missing.append(cp['source'])
+        if missing:
+            return jsonify({
+                "status": "error",
+                "message": f"Cannot run: required file(s) not uploaded: {', '.join(missing)}. Load them via Browse Library before running."
+            }), 400
 
     model_filename = get_next_model_filename(session_dir)
     config_file_path = os.path.join(session_dir, model_filename)
@@ -340,7 +521,196 @@ def download_project(client_id):
             print(f"Error removing temp zip: {e}")
         return response
 
-    return send_file(archive_path, as_attachment=True, download_name="project.zip")
+    return send_file(archive_path, as_attachment=True, download_name="project.jardes")
+
+
+def _get_newest_jardesigner_json(session_dir):
+    """Return (path, parsed_dict) of the newest jardesigner JSON, or (None, None).
+    Sorts by trailing numeric index in the filename (highest wins), then mtime as tiebreaker.
+    This is reliable even after ZIP extraction where all mtimes become identical."""
+    candidates = []
+    for fname in os.listdir(session_dir):
+        if not fname.endswith('.json'):
+            continue
+        fpath = os.path.join(session_dir, fname)
+        try:
+            with open(fpath, 'r') as f:
+                parsed = json.load(f)
+            if parsed.get('filetype') == 'jardesigner':
+                m = re.search(r'(\d+)\.json$', fname)
+                index = int(m.group(1)) if m else -1
+                candidates.append((index, os.path.getmtime(fpath), fpath, parsed))
+        except Exception:
+            continue
+    if not candidates:
+        return None, None
+    candidates.sort(reverse=True)
+    return candidates[0][2], candidates[0][3]
+
+
+def _get_referenced_sources(parsed):
+    """Return list of source filenames referenced by a jardesigner model dict."""
+    sources = []
+    cell = parsed.get('cellProto', {})
+    if cell.get('type') == 'file' and cell.get('source'):
+        sources.append(cell['source'])
+    for cp in parsed.get('chemProto', []):
+        if cp.get('source'):
+            sources.append(cp['source'])
+    for cp in parsed.get('chanProto', []):
+        if cp.get('source'):
+            sources.append(cp['source'])
+    if parsed.get('docFile'):
+        sources.append(parsed['docFile'])
+    return sources
+
+
+@app.route('/download_project_smart/<client_id>', methods=['GET'])
+def download_project_smart(client_id):
+    """Download a minimal .jardes archive: newest JSON (renamed to basename) + referenced files only."""
+    if not _is_safe_client_id(client_id):
+        return jsonify({"status": "error", "message": "Invalid Client ID"}), 400
+
+    basename = request.args.get('basename', 'model')
+    # Sanitise: strip path separators and keep only safe characters
+    basename = re.sub(r'[^\w\-. ]', '_', os.path.basename(basename))
+    if not basename:
+        basename = 'model'
+
+    session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
+    if not os.path.exists(session_dir):
+        return jsonify({"status": "error", "message": "Project directory not found"}), 404
+
+    json_path, parsed = _get_newest_jardesigner_json(session_dir)
+    if json_path is None:
+        return jsonify({"status": "error", "message": "No model JSON found in session"}), 404
+
+    sources = _get_referenced_sources(parsed)
+
+    tmp_zip_path = os.path.join(USER_UPLOADS_DIR, f'_smart_{uuid.uuid4()}.zip')
+    try:
+        with zipfile.ZipFile(tmp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.write(json_path, arcname=f'{basename}.json')
+            for src in sources:
+                src_path = os.path.join(session_dir, os.path.basename(src))
+                if os.path.isfile(src_path):
+                    zf.write(src_path, arcname=os.path.basename(src))
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Failed to build archive: {str(e)}"}), 500
+
+    @after_this_request
+    def remove_file(response):
+        try:
+            if os.path.exists(tmp_zip_path):
+                os.remove(tmp_zip_path)
+        except Exception as ex:
+            print(f"Error removing temp zip: {ex}")
+        return response
+
+    return send_file(tmp_zip_path, as_attachment=True, download_name=f'{basename}.jardes')
+
+
+@app.route('/upload_project/<client_id>', methods=['POST'])
+def upload_project(client_id):
+    if not _is_safe_client_id(client_id):
+        return jsonify({'error': 'Invalid client ID'}), 400
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    file = request.files['file']
+    if not file.filename.lower().endswith('.jardes'):
+        return jsonify({'error': 'Expected a .jardes file'}), 400
+
+    session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
+    os.makedirs(session_dir, exist_ok=True)
+
+    archive_path = os.path.join(session_dir, '_project_upload' + os.path.splitext(secure_filename(file.filename))[1])
+    file.save(archive_path)
+
+    try:
+        shutil.unpack_archive(archive_path, session_dir, format='zip')
+    except Exception as e:
+        return jsonify({'error': f'Failed to unpack archive: {str(e)}'}), 400
+    finally:
+        os.remove(archive_path)
+
+    # Prefer <basename>.json (matches the .jardes filename), then fall back to newest by mtime
+    upload_basename = os.path.splitext(secure_filename(file.filename))[0]
+    preferred_name = upload_basename + '.json'
+    preferred_path = os.path.join(session_dir, preferred_name)
+
+    json_content = None
+    if os.path.isfile(preferred_path):
+        try:
+            with open(preferred_path, 'r') as f:
+                text = f.read()
+            if json.loads(text).get('filetype') == 'jardesigner':
+                json_content = text
+        except Exception:
+            pass
+
+    if json_content is None:
+        json_path, _ = _get_newest_jardesigner_json(session_dir)
+        if json_path:
+            with open(json_path, 'r') as f:
+                json_content = f.read()
+
+    if json_content is None:
+        return jsonify({'error': 'No jardesigner JSON file found in archive'}), 400
+
+    return jsonify({'status': 'success', 'json': json_content})
+
+
+EXAMPLES_DIR = os.path.join(BASE_DIR, 'EXAMPLES')
+
+
+@app.route('/examples', methods=['GET'])
+def list_examples():
+    index_path = os.path.join(EXAMPLES_DIR, 'index.json')
+    if not os.path.isfile(index_path):
+        return jsonify([])
+    with open(index_path, 'r') as f:
+        return jsonify(json.load(f))
+
+
+@app.route('/load_example/<client_id>/<name>', methods=['POST'])
+def load_example(client_id, name):
+    if not _is_safe_client_id(client_id):
+        return jsonify({'error': 'Invalid client ID'}), 400
+    safe_name = secure_filename(name)
+    archive_path = os.path.join(EXAMPLES_DIR, safe_name + '.jardes')
+    if not os.path.isfile(archive_path):
+        return jsonify({'error': f'Example "{name}" not found'}), 404
+
+    session_dir = os.path.join(USER_UPLOADS_DIR, client_id)
+    os.makedirs(session_dir, exist_ok=True)
+
+    try:
+        shutil.unpack_archive(archive_path, session_dir, format='zip')
+    except Exception as e:
+        return jsonify({'error': f'Failed to unpack example: {str(e)}'}), 400
+
+    json_path, _ = _get_newest_jardesigner_json(session_dir)
+    if not json_path:
+        return jsonify({'error': 'No jardesigner JSON found in example'}), 400
+
+    # Prefer <name>.json from the archive (same logic as upload_project)
+    json_content = None
+    preferred_path = os.path.join(session_dir, safe_name + '.json')
+    if os.path.isfile(preferred_path):
+        try:
+            with open(preferred_path, 'r') as f:
+                text = f.read()
+            if json.loads(text).get('filetype') == 'jardesigner':
+                json_content = text
+        except Exception:
+            pass
+
+    if json_content is None:
+        with open(json_path, 'r') as f:
+            json_content = f.read()
+
+    return jsonify({'status': 'success', 'json': json_content})
 
 @app.route('/internal/push_data', methods=['POST'])
 def push_data():
