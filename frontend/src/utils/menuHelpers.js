@@ -7,6 +7,7 @@ export const OPTION_USER_SPECIFIED = "User specified path";
 const MATH_FNS = {
     H: x => x >= 0 ? 1 : 0,
     sign: Math.sign,
+    pi: Math.PI,
     sin: Math.sin, cos: Math.cos, tan: Math.tan,
     asin: Math.asin, acos: Math.acos, atan: Math.atan,
     exp: Math.exp, log: Math.log, sqrt: Math.sqrt,
