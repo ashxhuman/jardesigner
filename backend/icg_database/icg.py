@@ -24,6 +24,19 @@ _ICG_SEARCH_URL = ICG_API + "/search/"
 
 _FAMILY_BY_ION_CLASS = {'K': 1, 'Na': 2, 'Ca': 3, 'IH': 4, 'KCa': 5}
 
+def _source_label(authors, year) -> str:
+    """'Traub RD, Buhl EH, ...', 2003 -> 'ICG/Traub RD et al. 2003'.
+
+    Two-author papers keep both: 'ICG/Hodgkin AL & Huxley AF 1952'.
+    """
+    names = [a.strip() for a in (authors or '').split(',') if a.strip()]
+    if len(names) > 2:
+        who = f'{names[0]} et al.'
+    else:
+        who = ' & '.join(names)
+    label = ' '.join(filter(None, [who, str(year or '').strip()]))
+    return f'ICG/{label}' if label else 'ICG'
+
 _USER_UPLOADS_DIR = Path(__file__).resolve().parent.parent / "user_uploads"
 
 # ── Lazy singletons ───────────────────────────────────────────────────────────
@@ -180,6 +193,7 @@ def search_channels(ion_class="", suffix="", author="", year="",
                 "suffix":        sfx,
                 "icg_suffix":    sfx,
                 "ion_class":     g0.get("ion_class", ""),
+                "source":        _source_label(meta.get("authors", ""), meta.get("year", "")),
                 "authors":       meta.get("authors", ""),
                 "year":          str(meta.get("year", "")).strip(),
                 "title":         title,
@@ -277,6 +291,7 @@ def stage_channel(modeldb_id: int, suffix: str, client_id: str) -> dict:
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     ion_class, description, icg_id, fid = '', '', None, None
+    source = 'ICG'
     if _mchan:
         try:
             csv_rows = _mchan.search(modeldb_id=modeldb_id, suffix=suffix, show=False)
@@ -288,6 +303,7 @@ def stage_channel(modeldb_id: int, suffix: str, client_id: str) -> dict:
                 title     = meta.get('title', '')
                 year      = str(meta.get('year', '')).strip()
                 description = ' '.join(filter(None, [title, f'({year})' if year else None]))
+                source    = _source_label(meta.get('authors', ''), year)
                 raw = g0.get('icg_id')
                 if raw:
                     icg_id = int(raw)
@@ -299,7 +315,7 @@ def stage_channel(modeldb_id: int, suffix: str, client_id: str) -> dict:
     item = {
         'id':          f'icg_{modeldb_id}_{suffix}',
         'name':        f'{suffix}_{modeldb_id}',
-        'source':      f'ICG/{ion_class}' if ion_class else 'ICG',
+        'source':      source,
         'description': description,
         'source_type': 'file',
         'server_file': server_file,
