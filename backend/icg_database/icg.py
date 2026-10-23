@@ -266,9 +266,14 @@ def get_channel_detail(modeldb_id=None, suffix=None, icg_id=None) -> dict:
         if names:
             fields.append({'label': grp['name'], 'value': ', '.join(names)})
 
+    if ref and ref.get('authors'):
+        fields.append({'label': 'Authors', 'value': ref['authors']})
+
     for m in (data.get('metadata') or []):
         if m.get('value'):
-            fields.append({'label': m['name'], 'value': m['value']})
+            # ICG's "Authors" metadata is the .mod file author, not the paper's
+            label = 'Implemented By' if m['name'] == 'Authors' else m['name']
+            fields.append({'label': label, 'value': m['value']})
 
     if ref:
         ref_text = ' '.join(filter(None, [
